@@ -23,7 +23,6 @@ import math
 import multiprocessing
 import os
 import time
-from datetime import datetime
 
 import cv2
 import dlib
@@ -36,6 +35,28 @@ from sklearn.model_selection import train_test_split
 
 FLAGS = None
 
+def normalize_rect(rect):
+    infinity = 10 ** 10
+    h, w = (infinity, infinity)
+    left = rect[0] if rect[0] >= 0 else 0
+    top = rect[1] if rect[1] >= 0 else 0
+    right = rect[2] if rect[2] < w else w - 1
+    bottom = rect[3] if rect[3] < h else h - 1
+    return [left, top, right, bottom]
+
+def scale(x_scale, y_scale, rect):
+    left, top, right, bottom = rect
+    weight = (right - left)/2
+    height = (bottom - top)/2
+    center_x = (left + right)/2
+    center_y = (top + bottom)/2
+    center = (int(center_x), int(center_y))
+
+    left = int(center_x - weight*x_scale)
+    top = int(center_y - height*y_scale)
+    right = int(center_x + weight*x_scale)
+    bottom = int(center_y + height*y_scale)
+    return [left, top, right, bottom]
 
 def _int64_feature(value):
     return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
@@ -45,7 +66,7 @@ def _bytes_feature(value):
     return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
 
 
-def convert_to(data_set, name, i, base_path, dataset_name):
+def convert_to(data_set, name, i, base_path):
     """Converts a dataset to tfrecords."""
     file_name = data_set.file_name
     genders = data_set.gender
@@ -53,12 +74,8 @@ def convert_to(data_set, name, i, base_path, dataset_name):
     face_score = data_set.score
     second_face_score = data_set.second_score
     num_examples = data_set.shape[0]
-    if dataset_name == "imdb":
-        image_base_dir = os.path.join(base_path, "imdb_crop")
-    elif dataset_name == "wiki":
-        image_base_dir = os.path.join(base_path, "wiki_crop")
-    else:
-        raise NameError
+    print(num_examples)
+    image_base_dir = os.path.join(base_path, "imdb_crop")
 
     # initialize dlib's face detector (HOG-based) and then create
     # the facial landmark predictor and the face aligner
@@ -69,12 +86,6 @@ def convert_to(data_set, name, i, base_path, dataset_name):
 
     error = 0
     total = 0
-    # if images.shape[0] != num_examples:
-    #     raise ValueError('Images size %d does not match label size %d.' %
-    #                      (images.shape[0], num_examples))
-    # rows = images.shape[1]
-    # cols = images.shape[2]
-    # depth = images.shape[3]
     tfrecords_path = os.path.join(base_path, name)
     if not os.path.exists(tfrecords_path):
         os.mkdir(tfrecords_path)
@@ -82,6 +93,7 @@ def convert_to(data_set, name, i, base_path, dataset_name):
     print('Writing', filename)
     with tf.python_io.TFRecordWriter(filename) as writer:
         for index in range(num_examples):
+            print(f'{index} from {num_examples}')
             if face_score[index] < 0.75:
                 continue
             # if (~np.isnan(second_face_score[index])) and second_face_score[index] > 0.0:
@@ -93,97 +105,39 @@ def convert_to(data_set, name, i, base_path, dataset_name):
                 continue
 
             try:
-                # image_raw = io.imread(os.path.join(base_dir,file_names[index])).tostring()
-                # image_raw = open(os.path.join(base_dir,str(file_name[index][0]))).read()
-
-                # load the input image, resize it, and convert it to grayscale
                 image = cv2.imread(os.path.join(image_base_dir, str(file_name[index][0])), cv2.IMREAD_COLOR)
-                # image = imutils.resize(image, width=256)
-                gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-                rects = detector(gray, 2)
+                #gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+                rects = detector(image, 2)
                 if len(rects) != 1:
                     continue
                 else:
-                    image_raw = fa.align(image, gray, rects[0])
+                    rect = rects[0]
+                    left = rect.left()
+                    top = rect.top()
+                    right = rect.right()
+                    bottom = rect.bottom()
+                    scaled_rect = scale(1.3, 1.5, [left,top,right,bottom])
+                    normilized_rect = normalize_rect(scaled_rect)
+                    dlib_rect = dlib.rectangle(*normilized_rect)
+                    image_raw = fa.align(image, image, dlib_rect)
                     image_raw = image_raw.tostring()
             except IOError:  # some files seem not exist in face_data dir
                 error = error + 1
                 pass
-            # image_raw = images[index].tostring()
             example = tf.train.Example(features=tf.train.Features(feature={
-                # 'height': _int64_feature(rows),
-                # 'width': _int64_feature(cols),
-                # 'depth': _int64_feature(depth),
                 'age': _int64_feature(int(ages[index])),
                 'gender': _int64_feature(int(genders[index])),
                 'image_raw': _bytes_feature(image_raw),
-                'file_name': _bytes_feature(str(file_name[index][0]))}))
+                'file_name': _bytes_feature(str.encode(str(file_name[index][0])))
+                }))
             writer.write(example.SerializeToString())
             total = total + 1
     print("There are ", error, " missing pictures")
     print("Found", total, "valid faces")
 
-
-def get_meta(mat_path, db):
-    if len(db)==2:
-        meta = loadmat(mat_path[0])
-        full_path = meta[db[0]][0, 0]["full_path"][0]
-        dob = meta[db[0]][0, 0]["dob"][0]  # Matlab serial date number
-        gender = meta[db[0]][0, 0]["gender"][0]
-        photo_taken = meta[db[0]][0, 0]["photo_taken"][0]  # year
-        face_score = meta[db[0]][0, 0]["face_score"][0]
-        second_face_score = meta[db[0]][0, 0]["second_face_score"][0]
-        age = [calc_age(photo_taken[i], dob[i]) for i in range(len(dob))]
-        data = {"file_name": full_path, "gender": gender, "age": age, "score": face_score,
-                "second_score": second_face_score}
-        dataset1 = pd.DataFrame(data)
-
-        meta = loadmat(mat_path[1])
-        full_path = meta[db[1]][0, 0]["full_path"][0]
-        dob = meta[db[1]][0, 0]["dob"][0]  # Matlab serial date number
-        gender = meta[db[1]][0, 0]["gender"][0]
-        photo_taken = meta[db[1]][0, 0]["photo_taken"][0]  # year
-        face_score = meta[db[1]][0, 0]["face_score"][0]
-        second_face_score = meta[db[1]][0, 0]["second_face_score"][0]
-        age = [calc_age(photo_taken[i], dob[i]) for i in range(len(dob))]
-        data = {"file_name": full_path, "gender": gender, "age": age, "score": face_score,
-                "second_score": second_face_score}
-        dataset2 = pd.DataFrame(data)
-        dataset = pd.concat([dataset1,dataset2],axis=0)
-    else:
-        meta = loadmat(mat_path)
-        full_path = meta[db][0, 0]["full_path"][0]
-        dob = meta[db][0, 0]["dob"][0]  # Matlab serial date number
-        gender = meta[db][0, 0]["gender"][0]
-        photo_taken = meta[db][0, 0]["photo_taken"][0]  # year
-        face_score = meta[db][0, 0]["face_score"][0]
-        second_face_score = meta[db][0, 0]["second_face_score"][0]
-        age = [calc_age(photo_taken[i], dob[i]) for i in range(len(dob))]
-        data = {"file_name": full_path, "gender": gender, "age": age, "score": face_score,
-                "second_score": second_face_score}
-        dataset = pd.DataFrame(data)
-    return dataset
-
-
-def calc_age(taken, dob):
-    birth = datetime.fromordinal(max(int(dob) - 366, 1))
-
-    # assume the photo was taken in the middle of the year
-    if birth.month < 7:
-        return taken - birth.year
-    else:
-        return taken - birth.year - 1
-
-
-def main(db_path, db_name, test_size, cpu_cores, tfrecords_bath_dir):
+def main(test_size, cpu_cores, tfrecords_bath_dir):
     start_time = time.time()
-    # Get the data.
-    # data_sets = pd.read_csv("gender_age_train.txt", header=None, sep=" ")
-    # data_sets.columns = ["file_name", "gender", "age"]
-    data_sets = get_meta(db_path, db_name)
-    # data_sets = data_sets[data_sets.age >= 0]
-    # data_sets = data_sets[data_sets.age <= 100]
-
+    data_sets = pd.read_json('./data/imdb_crop/imdb.json')
     train_sets, test_sets = train_test_split(data_sets, test_size=test_size, random_state=2017)
     train_sets.reset_index(drop=True, inplace=True)
     test_sets.reset_index(drop=True, inplace=True)
@@ -194,50 +148,23 @@ def main(db_path, db_name, test_size, cpu_cores, tfrecords_bath_dir):
     # multi cpu
     pool = multiprocessing.Pool(processes=cpu_cores)
     for p in range(cpu_cores):
+        print(train_sets[train_idx[p]:train_idx[p + 1] - 1].shape)
         pool.apply_async(convert_to,
                          (train_sets[train_idx[p]:train_idx[p + 1] - 1].copy().reset_index(drop=True), 'train', p,
-                          tfrecords_bath_dir, db_name,))
-    for p in range(cpu_cores // 4):
+                          tfrecords_bath_dir,))
+    for p in range(cpu_cores):
         pool.apply_async(convert_to,
                          (test_sets[test_idx[p]:test_idx[p + 1] - 1].copy().reset_index(drop=True), 'test', p,
-                          tfrecords_bath_dir, db_name,))
+                          tfrecords_bath_dir,))
     pool.close()
     pool.join()
     duration = time.time() - start_time
     print("Running %.3f sec All done!" % duration)
-    # data_sets = mnist.read_data_sets(FLAGS.directory,
-    #                                  dtype=tf.uint8,
-    #                                  reshape=False,
-    #                                  validation_size=FLAGS.validation_size)
-
-    # Convert to Examples and write the result to TFRecords.
-    # convert_to(train_sets, 'train-')
-    # convert_to(test_sets,'test-')
-    # convert_to(data_sets.validation, 'validation')
-    # convert_to(data_sets.test, 'test')
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--imdb_db", type=str, default="./data/imdb_crop/imdb.mat")
-    parser.add_argument("--wiki_db", type=str, default="./data/wiki_crop/wiki.mat")
-    parser.add_argument("--imdb", action="store_true", default=False, help="Set this flag if use imdb datasets")
-    parser.add_argument("--wiki", action="store_true", default=False, help="Set this flag if use wiki datasets")
     parser.add_argument("--base_path", type=str, default="./data", help="Base path of datasets and tfrecords")
     parser.add_argument("--nworks", default=8, type=int, help="Use n cores to create tfrecords at a time")
-    parser.add_argument("--test_size", type=float, default=0.01, help="How many items as testset")
+    parser.add_argument("--test_size", type=float, default=0.2, help="How many items as testset")
     args = parser.parse_args()
-    if (args.imdb and args.wiki):
-        print("Using imdb and wiki datasets")
-        main(db_path=[args.imdb_db,args.wiki_db], db_name=["imdb","wiki"], test_size=args.test_size, cpu_cores=args.nworks,
-             tfrecords_bath_dir=args.base_path)
-    elif args.imdb:
-        print("Using imdb dataset")
-        main(db_path=args.imdb_db, db_name="imdb", test_size=args.test_size, cpu_cores=args.nworks,
-             tfrecords_bath_dir=args.base_path)
-    elif args.wiki:
-        print("Using wiki dataset")
-        main(db_path=args.wiki_db, db_name="wiki", test_size=args.test_size, cpu_cores=args.nworks,
-             tfrecords_bath_dir=args.base_path)
-    else:
-        raise NameError("You should choose one of --imdb or --wiki when running this script.")
+    main(test_size=args.test_size, cpu_cores=args.nworks, tfrecords_bath_dir=args.base_path)
