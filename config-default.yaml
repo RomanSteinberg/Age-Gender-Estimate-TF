@@ -1,0 +1,18 @@
+general:
+  working_dir: ./
+  logging_level: INFO
+
+
+dataset_to_tfrecords:
+  general:
+    test_path: data
+    dataset_path: data
+    json_path: data/imdb.json
+    tfrecords_path: tfrecords
+    nworks: 1
+    test_size: 0.2
+  image:
+    size: 256
+    height_scale: 1.5
+    width_scale: 1.2
+    face_score_threshold: 0.75

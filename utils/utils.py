@@ -32,8 +32,8 @@ def read_and_decode(filename_queue):
     # image = image * (1. / 255) - 0.5
 
     image = tf.decode_raw(features['image_raw'], tf.uint8)
-    image.set_shape([160 * 160 * 3])
-    image = tf.reshape(image, [160, 160, 3])
+    image.set_shape([256 * 256 * 3])
+    image = tf.reshape(image, [256, 256, 3])
     image = tf.reverse_v2(image, [-1])
     image = tf.image.per_image_standardization(image)
     # image = tf.cast(image,tf.float32) * (1. / 255) - 0.5

@@ -5,7 +5,7 @@ import time
 import tensorflow as tf
 
 import inception_resnet_v1
-from utils import inputs, get_files_name
+from utils.utils import inputs, get_files_name
 
 
 def run_training(image_path, batch_size, epoch, model_path, log_dir, start_lr, wd, kp):
@@ -79,15 +79,17 @@ def run_training(image_path, batch_size, epoch, model_path, log_dir, start_lr, w
 
         # if you want to transfer weight from another model,please comment below codes
         new_saver = tf.train.Saver(max_to_keep=100)
-        ckpt = tf.train.get_checkpoint_state(model_path)
+        pretrained_model_path = os.path.join(model_path,'pretrained_models')
+        print('pretrained_model_path',pretrained_model_path)
+        ckpt = tf.train.get_checkpoint_state(pretrained_model_path)
         if ckpt and ckpt.model_checkpoint_path:
             new_saver.restore(sess, ckpt.model_checkpoint_path)
             print("restore and continue training!")
         else:
             pass
         # if you want to transfer weight from another model, please comment above codes
-
-
+        #
+        #
         # Start input enqueue threads.
         coord = tf.train.Coordinator()
         threads = tf.train.start_queue_runners(sess=sess, coord=coord)
@@ -111,14 +113,14 @@ def run_training(image_path, batch_size, epoch, model_path, log_dir, start_lr, w
                     print('%.3f sec' % duration)
                     start_time = time.time()
                 if step % 1000 == 0:
-                    save_path = new_saver.save(sess, os.path.join(model_path, "model.ckpt"), global_step=global_step)
+                    save_path = new_saver.save(sess, os.path.join(model_path,'trained_models', "model.ckpt"), global_step=global_step)
                     print("Model saved in file: %s" % save_path)
                 step = sess.run(global_step)
         except tf.errors.OutOfRangeError:
             print('Done training for %d epochs, %d steps.' % (epoch, step))
         finally:
             # When done, ask the threads to stop.
-            save_path = new_saver.save(sess, os.path.join(model_path, "model.ckpt"), global_step=global_step)
+            save_path = new_saver.save(sess, os.path.join(model_path,'trained_models', "model.ckpt"), global_step=global_step)
             print("Model saved in file: %s" % save_path)
             coord.request_stop()
         # Wait for threads to finish.
