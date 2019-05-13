@@ -9,10 +9,27 @@ dataset_to_tfrecords:
     dataset_path: data
     json_path: data/imdb.json
     tfrecords_path: tfrecords
-    nworks: 1
+    nworks: 4
     test_size: 0.2
   image:
     size: 256
     height_scale: 1.5
     width_scale: 1.2
     face_score_threshold: 0.75
+    face_area_threshold: 2500
+
+train:
+  learning_rate: 1e-3
+  weight_decay: 1e-5
+  model_path: models
+  log_path: train_log
+  epoch: 1
+  images: tfrecords/07-05-2019_12:35:06/train
+  batch_size: 30
+  keep_prob: 0.8
+  cuda: True
+
+
+
+
+

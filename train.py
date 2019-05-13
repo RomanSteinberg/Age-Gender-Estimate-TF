@@ -1,16 +1,30 @@
 import argparse
 import os
 import time
-
+import yaml
 import tensorflow as tf
+from datetime import datetime
 
 import inception_resnet_v1
 from utils.utils import inputs, get_files_name
+from utils.config_parser import get_config
 
 
-def run_training(image_path, batch_size, epoch, model_path, log_dir, start_lr, wd, kp):
+def run_training(config):
+    image_path = config['images']
+    batch_size = config['batch_size']
+    epoch = config['epoch']
+    model_path = config['model_path']
+    log_dir = config['log_path']
+    start_lr = config['learning_rate']
+    wd = config['weight_decay']
+    kp = config['keep_prob']
+    epoch_number = 0
+    # from tensorflow.python.framework import ops
+    # ops.reset_default_graph()
     # Tell TensorFlow that the model will be built into the default Graph.
     with tf.Graph().as_default():
+
         # Create a session for running operations in the Graph.
         sess = tf.Session()
 
@@ -56,6 +70,7 @@ def run_training(image_path, batch_size, epoch, model_path, log_dir, start_lr, w
 
         # Add to the Graph operations that train the model.
         global_step = tf.Variable(0, name="global_step", trainable=False)
+        # global_step = tf.train.get_global_step()
         lr = tf.train.exponential_decay(start_lr, global_step=global_step, decay_steps=3000, decay_rate=0.9,
                                         staircase=True)
         optimizer = tf.train.AdamOptimizer(lr)
@@ -96,6 +111,11 @@ def run_training(image_path, batch_size, epoch, model_path, log_dir, start_lr, w
         try:
             step = sess.run(global_step)
             start_time = time.time()
+            global_start = start_time
+            model_folder = datetime.now().strftime("%d-%m-%Y_%H:%M:%S")
+            p = os.path.join(model_path, 'trained_models', model_folder)
+            if not os.path.exists(p):
+                os.makedirs(p)
             while not coord.should_stop():
                 # start_time = time.time()
                 # Run one step of the model.  The return values are
@@ -108,19 +128,33 @@ def run_training(image_path, batch_size, epoch, model_path, log_dir, start_lr, w
                 train_writer.add_summary(summary, step)
                 # duration = time.time() - start_time
                 # # Print an overview fairly often.
-                if step % 100 == 0:
-                    duration = time.time() - start_time
-                    print('%.3f sec' % duration)
+                # if step % 100 == 0:
+                #     duration = time.time() - start_time
+                #     print('%.3f sec' % duration)
+                #     start_time = time.time()
+                if (step-14001) % 2882 == 0:
+                    epoch_number += 1
+                    print('epoch_number: ',epoch_number,'time: ',time.time() - start_time)
                     start_time = time.time()
-                if step % 1000 == 0:
-                    save_path = new_saver.save(sess, os.path.join(model_path,'trained_models', "model.ckpt"), global_step=global_step)
+                if (step-14001) % 8646 == 0:
+                    save_path = new_saver.save(sess, os.path.join(model_path,'trained_models',model_folder, "model.ckpt"), global_step=global_step)
                     print("Model saved in file: %s" % save_path)
+                    duration = time.time() - global_start
+                    config['duration'] = duration
+                    json_parameters_path = os.path.join(model_path, 'trained_models', model_folder, "params.yaml")
+                    with open(json_parameters_path, 'w') as file:
+                        yaml.dump(config, file, default_flow_style=False)
                 step = sess.run(global_step)
         except tf.errors.OutOfRangeError:
             print('Done training for %d epochs, %d steps.' % (epoch, step))
         finally:
+            duration = time.time() - global_start
+            config['duration'] = duration
+            json_parameters_path = os.path.join(model_path,'trained_models',model_folder, "params.yaml")
+            with open(json_parameters_path, 'w') as file:
+                yaml.dump(config, file, default_flow_style=False)
             # When done, ask the threads to stop.
-            save_path = new_saver.save(sess, os.path.join(model_path,'trained_models', "model.ckpt"), global_step=global_step)
+            save_path = new_saver.save(sess, os.path.join(model_path,'trained_models',model_folder, "model.ckpt"), global_step=global_step)
             print("Model saved in file: %s" % save_path)
             coord.request_stop()
         # Wait for threads to finish.
@@ -129,19 +163,7 @@ def run_training(image_path, batch_size, epoch, model_path, log_dir, start_lr, w
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--learning_rate", "--lr", type=float, default=1e-3, help="Init learning rate")
-    parser.add_argument("--weight_decay", type=float, default=1e-5, help="Set 0 to disable weight decay")
-    parser.add_argument("--model_path", type=str, default="./models", help="Path to save models")
-    parser.add_argument("--log_path", type=str, default="./train_log", help="Path to save logs")
-    parser.add_argument("--epoch", type=int, default=6, help="Epoch")
-    parser.add_argument("--images", type=str, default="./data/train", help="Path of tfrecords")
-    parser.add_argument("--batch_size", type=int, default=128, help="Batch size")
-    parser.add_argument("--keep_prob", type=float, default=0.8, help="Used by dropout")
-    parser.add_argument("--cuda", default=False, action="store_true",
-                        help="Set this flag will use cuda when testing.")
-    args = parser.parse_args()
-    if not args.cuda:
+    config = get_config('config.yaml')['train']
+    if not config['cuda']:
         os.environ['CUDA_VISIBLE_DEVICES'] = ''
-    run_training(image_path=args.images, batch_size=args.batch_size, epoch=args.epoch, model_path=args.model_path,
-                 log_dir=args.log_path, start_lr=args.learning_rate, wd=args.weight_decay, kp=args.keep_prob)
+    run_training(config)
