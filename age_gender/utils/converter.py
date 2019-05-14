@@ -38,6 +38,8 @@ class Converter:
                 if not os.path.exists(save_folder_path):
                     os.makedirs(save_folder_path)
                 cv2.imwrite(save_path, processed_image)
+        with open(os.path.join(processed_dataset_path, 'dataset.json'), 'w') as f:
+            json.dump(dataset, f)
         self.save_dataset_config(processed_dataset_path)
 
     def convert_image(self, image_path):
