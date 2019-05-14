@@ -3,7 +3,7 @@ general:
   logging_level: INFO
 
 
-dataset_to_tfrecords:
+prepare:
   general:
     test_path: data
     dataset_path: data
@@ -11,6 +11,7 @@ dataset_to_tfrecords:
     tfrecords_path: tfrecords
     nworks: 4
     test_size: 0.2
+    processed_dataset_path: processed_data
   image:
     size: 256
     height_scale: 1.5
