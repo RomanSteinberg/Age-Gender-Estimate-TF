@@ -8,8 +8,6 @@ prepare:
     test_path: data
     dataset_path: data
     json_path: data/imdb.json
-    tfrecords_path: tfrecords
-    nworks: 4
     test_size: 0.2
     processed_dataset_path: processed_data
   image:

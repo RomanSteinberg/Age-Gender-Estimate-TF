@@ -12,7 +12,6 @@ from datetime import datetime
 from imutils.face_utils import FaceAligner
 from sklearn.model_selection import train_test_split
 from utils.config_parser import get_config
-FLAGS = None
 
 
 def get_area(rect):
@@ -33,28 +32,28 @@ def normalize_rect(rect):
     return [left, top, right, bottom]
 
 
-def scale(x_scale, y_scale, rect):
-    left, top, right, bottom = rect
-    weight = (right - left)/2
-    height = (bottom - top)/2
-    center_x = (left + right)/2
-    center_y = (top + bottom)/2
-    left = int(center_x - weight*x_scale)
-    top = int(center_y - height*y_scale)
-    right = int(center_x + weight*x_scale)
-    bottom = int(center_y + height*y_scale)
-    return [left, top, right, bottom]
-
-
-def align_face(config, rect, face_aligner, image, gray_image):
-    height_scale = config['height_scale']
-    width_scale = config['width_scale']
+def scale(config, rect):
+    y_scale = config['height_scale']
+    x_scale = config['width_scale']
     left = rect.left()
     top = rect.top()
     right = rect.right()
     bottom = rect.bottom()
-    scaled_rect = scale(width_scale, height_scale, [left, top, right, bottom])
-    normilized_rect = normalize_rect(scaled_rect)
-    dlib_rect = dlib.rectangle(*normilized_rect)
+    weight = (right - left)/2
+    height = (bottom - top)/2
+    center_x = (left + right)/2
+    center_y = (top + bottom)/2
+    left = int(center_x - weight * x_scale)
+    top = int(center_y - height * y_scale)
+    right = int(center_x + weight * x_scale)
+    bottom = int(center_y + height * y_scale)
+    normalized_rect = normalize_rect([left, top, right, bottom])
+    return normalized_rect
+
+
+def align_face(config, rect, face_aligner, image, gray_image):
+    scaled_rect = scale(config, rect)
+    dlib_rect = dlib.rectangle(*scaled_rect)
     image_raw = face_aligner.align(image, gray_image, dlib_rect)
     return image_raw
+
