@@ -26,8 +26,15 @@ class Converter:
         with open(self.json) as f:
             dataset = json.load(f)
 
+        new_dataset = []
+        bad_gender_cnt = 0
         for record in tqdm(dataset, bar_format='Progress {bar} {percentage:3.0f}% [{elapsed}<{remaining}'):
+            if not isinstance(record['gender'], float):
+                bad_gender_cnt += 1
+                continue
+
             file_name = record['file_name'][0]
+            new_dataset.append({'file_name': file_name, 'gender': int(record['gender']), 'age': record['age']})
             image_path = os.path.join(dataset_path, file_name)
             save_path = os.path.join(processed_dataset_path, file_name)
             if os.path.exists(save_path):
@@ -39,8 +46,10 @@ class Converter:
                     os.makedirs(save_folder_path)
                 cv2.imwrite(save_path, processed_image)
         with open(os.path.join(processed_dataset_path, 'dataset.json'), 'w') as f:
-            json.dump(dataset, f)
+            json.dump(new_dataset, f)
         self.save_dataset_config(processed_dataset_path)
+        print('Records with incorrect gender: ', bad_gender_cnt)
+        print('Total records transformed %d/%d', (len(new_dataset), len(dataset)))
 
     def convert_image(self, image_path):
         face_area_threshold = self.config['image']['face_area_threshold']
