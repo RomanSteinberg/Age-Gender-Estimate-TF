@@ -24,7 +24,6 @@ def get_config(source='config-default.yaml', subproject=None):
 
     working_dir = os.path.abspath(config['general']['working_dir'])
     config['general']['working_dir'] = working_dir
-    print(working_dir)
     set_absolute_paths(config, working_dir)
     if subproject is None:
         return config

@@ -92,6 +92,7 @@ def _bytes_feature(value):
 def convert_to(data_set, name, i, config, tfrecords_folder):
     config_general = config['general']
     dataset_path = config_general['dataset_path']
+    dataset_folder = os.path.dirname(dataset_path)
     tfrecords_path = config_general['tfrecords_path']
 
     config_image = config['image']
@@ -132,7 +133,7 @@ def convert_to(data_set, name, i, config, tfrecords_folder):
             if np.isnan(genders[index]):
                 continue
             try:
-                image = cv2.imread(os.path.join(dataset_path, str(file_name[index][0])), cv2.IMREAD_COLOR)
+                image = cv2.imread(os.path.join(dataset_folder, str(file_name[index][0])), cv2.IMREAD_COLOR)
                 image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
                 gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
                 rects = detector(image, 2)
@@ -166,13 +167,13 @@ def main(config):
     config_general = config['general']
     test_size = config_general['test_size']
     cpu_cores = config_general['nworks']
-    json_path = config_general['json_path']
+    dataset_path = config_general['dataset_path']
     tfrecords_path = config_general['tfrecords_path']
     tfrecords_folder = datetime.now().strftime("%d-%m-%Y_%H:%M:%S")
 
     start_time = time.time()
-    data_sets = pd.read_json(json_path)[:100]
-    train_sets, test_sets = train_test_split(data_sets, test_size=test_size, random_state=2017)
+    dataset = pd.read_json(dataset_path)
+    train_sets, test_sets = train_test_split(dataset, test_size=test_size, random_state=2017)
     train_sets.reset_index(drop=True, inplace=True)
     test_sets.reset_index(drop=True, inplace=True)
     train_nums = train_sets.shape[0]

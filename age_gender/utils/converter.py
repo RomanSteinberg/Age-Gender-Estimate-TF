@@ -19,7 +19,7 @@ class Converter:
 
     def __init__(self, config):
         self.config = config
-        self.json = config['general']['json_path']
+        self.json = config['general']['dataset_path']
 
         self.shape_predictor = 'shape_predictor_68_face_landmarks.dat'
         self.detector = dlib.get_frontal_face_detector()
@@ -27,7 +27,7 @@ class Converter:
         self.face_aligner = FaceAligner(config['image'], self.predictor)
 
     def convert_dataset(self):
-        dataset_path = self.config['general']['dataset_path']
+        dataset_folder = os.path.dirname(self.json)
         processed_dataset_path = self.config['general']['processed_dataset_path']
         with open(self.json) as f:
             dataset = json.load(f)
@@ -40,8 +40,7 @@ class Converter:
                 continue
 
             file_name = record['file_name'][0]
-            new_dataset.append({'file_name': file_name, 'gender': int(record['gender']), 'age': record['age']})
-            image_path = os.path.join(dataset_path, file_name)
+            image_path = os.path.join(dataset_folder, file_name)
             save_path = os.path.join(processed_dataset_path, file_name)
             if os.path.exists(save_path):
                 continue
@@ -51,11 +50,12 @@ class Converter:
                 if not os.path.exists(save_folder_path):
                     os.makedirs(save_folder_path)
                 cv2.imwrite(save_path, processed_image)
+                new_dataset.append({'file_name': file_name, 'gender': int(record['gender']), 'age': record['age']})
         with open(os.path.join(processed_dataset_path, 'dataset.json'), 'w') as f:
             json.dump(new_dataset, f)
         self.save_dataset_config(processed_dataset_path)
         print('Records with incorrect gender: ', bad_gender_cnt)
-        print('Total records transformed %d/%d', (len(new_dataset), len(dataset)))
+        print('Total records transformed %d/%d' % (len(new_dataset), len(dataset)))
 
     def convert_image(self, image_path):
         face_area_threshold = self.config['image']['face_area_threshold']

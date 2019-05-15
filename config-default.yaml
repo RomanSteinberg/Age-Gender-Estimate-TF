@@ -5,8 +5,7 @@ general:
 
 prepare:
   general:
-    dataset_path: data
-    json_path: data/dataset.json
+    dataset_path: data/dataset.json
     test_size: 0.2
     processed_dataset_path: data/processed_data
   image:
