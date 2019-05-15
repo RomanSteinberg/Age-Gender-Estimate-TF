@@ -4,21 +4,27 @@ import dlib
 import json
 import yaml
 from tqdm import tqdm
-from imutils.face_utils import FaceAligner
-from age_gender.utils.preprocess import align_face, get_area, scale
+from age_gender.preprocess.face_aligner import FaceAligner
+
+
+def get_area(rect):
+    left = rect.left()
+    top = rect.top()
+    right = rect.right()
+    bottom = rect.bottom()
+    return (bottom - top) * (right - left)
 
 
 class Converter:
 
     def __init__(self, config):
         self.config = config
-        self.image_size = config['image']['size']
         self.json = config['general']['json_path']
 
         self.shape_predictor = 'shape_predictor_68_face_landmarks.dat'
         self.detector = dlib.get_frontal_face_detector()
         self.predictor = dlib.shape_predictor(self.shape_predictor)
-        self.face_aligner = FaceAligner(self.predictor, desiredFaceWidth=self.image_size)
+        self.face_aligner = FaceAligner(config['image'], self.predictor)
 
     def convert_dataset(self):
         dataset_path = self.config['general']['dataset_path']
@@ -28,7 +34,7 @@ class Converter:
 
         new_dataset = []
         bad_gender_cnt = 0
-        for record in tqdm(dataset, bar_format='Progress {bar} {percentage:3.0f}% [{elapsed}<{remaining}'):
+        for record in tqdm(dataset[:10], bar_format='Progress {bar} {percentage:3.0f}% [{elapsed}<{remaining}'):
             if not isinstance(record['gender'], float):
                 bad_gender_cnt += 1
                 continue
@@ -65,26 +71,8 @@ class Converter:
             area = get_area(rect)
             if area < face_area_threshold:
                 return None
-
-            # align
-            face_aligner = self.face_aligner
-            if self._is_like_image(image.shape):
-                face_aligner = FaceAligner(self.predictor, desiredFaceWidth=w, desiredFaceHeight=h)
-            aligned_face = align_face(self.config['image'], rect, face_aligner, image, gray_image)
-
-            # crop
-            rect = self.detector(image, 2)[0]
-            rect = scale(self.config['image'], rect)
-            face = aligned_face[rect[1]:rect[3], rect[0]:rect[2], :]
-
-            # resize
-            if self._is_like_image(aligned_face.shape):
-                face = cv2.resize(face, (self.image_size, self.image_size))
-            return face
-
-    def _is_like_image(self, shape):
-        size = shape[0] != self.image_size or shape[1] != self.image_size
-        return size
+            aligned_face = self.face_aligner.align(image, gray_image, rect)
+            return aligned_face
 
     def save_dataset_config(self, processed_dataset_path):
         with open(os.path.join(processed_dataset_path, 'config.yaml'), 'w') as file:

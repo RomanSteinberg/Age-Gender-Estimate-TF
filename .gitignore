@@ -83,6 +83,7 @@ venv.bak/
 # Current project
 config.yaml
 data/*
+data
 tfrecords/*
 train_log/*
 models/*

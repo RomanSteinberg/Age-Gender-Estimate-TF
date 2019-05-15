@@ -5,15 +5,12 @@ general:
 
 prepare:
   general:
-    test_path: data
     dataset_path: data
-    json_path: data/imdb.json
+    json_path: data/dataset.json
     test_size: 0.2
-    processed_dataset_path: processed_data
+    processed_dataset_path: data/processed_data
   image:
     size: 256
-    height_scale: 1.5
-    width_scale: 1.2
     face_score_threshold: 0.75
     face_area_threshold: 2500
 
