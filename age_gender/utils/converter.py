@@ -34,7 +34,7 @@ class Converter:
 
         new_dataset = []
         bad_gender_cnt = 0
-        for record in tqdm(dataset[:10], bar_format='Progress {bar} {percentage:3.0f}% [{elapsed}<{remaining}'):
+        for record in tqdm(dataset, bar_format='Progress {bar} {percentage:3.0f}% [{elapsed}<{remaining}'):
             if not isinstance(record['gender'], float):
                 bad_gender_cnt += 1
                 continue
