@@ -59,9 +59,17 @@ class FaceAligner:
             transf_coords.append([int(x_1), int(y_1)])
         arr = np.asarray(transf_coords)
         x_max = arr[:, :1].max()
+        if x_max > image.shape[0]+2*x_indent:
+            x_max = image.shape[0]+2*x_indent
         x_min = arr[:, :1].min()
+        if x_min < 0:
+            x_min = 0
         y_max = arr[:, 1:2].max()
+        if y_max > image.shape[1]+2*y_indent:
+            y_max = image.shape[1]+2*y_indent
         y_min = arr[:, 1:2].min()
+        if y_min < 0:
+            y_min = 0
         cropped_face = aligned_face[y_min:y_max, x_min:x_max, :]
         image_size = self.config['size']
         resized_face = cv2.resize(cropped_face, (image_size, image_size), interpolation=cv2.INTER_LANCZOS4)
