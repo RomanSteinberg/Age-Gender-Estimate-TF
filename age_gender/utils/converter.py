@@ -42,15 +42,17 @@ class Converter:
             file_name = record['file_name'][0]
             image_path = os.path.join(dataset_folder, file_name)
             save_path = os.path.join(processed_dataset_path, file_name)
-            if os.path.exists(save_path):
-                continue
-            processed_image = self.convert_image(image_path)
-            if processed_image is not None:
-                save_folder_path = os.path.dirname(os.path.abspath(save_path))
-                if not os.path.exists(save_folder_path):
-                    os.makedirs(save_folder_path)
-                cv2.imwrite(save_path, processed_image)
-                new_dataset.append({'file_name': file_name, 'gender': int(record['gender']), 'age': record['age']})
+            if not os.path.exists(save_path):
+                processed_image = self.convert_image(image_path)
+                if processed_image is None:
+                    continue
+                else:
+                    save_folder_path = os.path.dirname(os.path.abspath(save_path))
+                    if not os.path.exists(save_folder_path):
+                        os.makedirs(save_folder_path)
+                    cv2.imwrite(save_path, processed_image)
+            new_dataset.append({'file_name': file_name, 'gender': int(record['gender']), 'age': record['age']})
+
         with open(os.path.join(processed_dataset_path, 'dataset.json'), 'w') as f:
             json.dump(new_dataset, f)
         self.save_dataset_config(processed_dataset_path)
