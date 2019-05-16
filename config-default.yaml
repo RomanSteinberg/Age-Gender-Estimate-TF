@@ -8,6 +8,7 @@ prepare:
     dataset_path: data/dataset.json
     test_size: 0.2
     processed_dataset_path: data/processed_data
+    n_jobs: 4
   image:
     size: 256
     face_score_threshold: 0.75
