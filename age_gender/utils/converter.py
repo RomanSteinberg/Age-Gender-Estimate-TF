@@ -4,6 +4,9 @@ import dlib
 import json
 import yaml
 import numpy as np
+from time import monotonic as now
+from datetime import timedelta
+
 from age_gender.preprocess.face_aligner import FaceAligner
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
@@ -34,13 +37,16 @@ class Converter:
         with open(self.dataset_path) as f:
             dataset = json.load(f)[self.slice[0]: self.slice[1]]
 
+        total = self.slice[1] - self.slice[0]
         new_dataset = []
         bad_gender_cnt = 0
         small_faces_cnt = 0
+        start_time = now()
         for ind, record in enumerate(dataset):
-            if ind % 1000:
-                print(f'pid: {self.pid}, {ind} from {self.slice[1]-self.slice[0]} images processed, '
-                      f'{round(ind/(self.slice[1]-self.slice[0])*100,1)} %')
+            if ind % 1000 == 1:
+                ratio = ind / total
+                eta = timedelta(seconds=(now() - start_time) * (1 - ratio) / (ratio + 1e-9))
+                print(f'pid: {self.pid}, progress: {round(ratio*100, 1)}% {ind}/{total} images, eta={eta}')
             if not isinstance(record['gender'], float):
                 bad_gender_cnt += 1
                 continue
@@ -59,6 +65,7 @@ class Converter:
                         os.makedirs(save_folder_path)
                     cv2.imwrite(save_path, processed_image)
             new_dataset.append({'file_name': file_name, 'gender': int(record['gender']), 'age': record['age']})
+        print(f'pid: {self.pid}, total: {total} images, time={now() - start_time}')
         return new_dataset, bad_gender_cnt, small_faces_cnt
 
     def convert_image(self, image_path):
