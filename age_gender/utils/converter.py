@@ -3,7 +3,7 @@ import cv2
 import dlib
 import json
 import yaml
-from tqdm import tqdm
+import numpy as np
 from age_gender.preprocess.face_aligner import FaceAligner
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
@@ -18,11 +18,11 @@ def get_area(rect):
 
 class Converter:
 
-    def __init__(self, config, slice_limits):
+    def __init__(self, config, slice_limits, pid):
         self.config = config
         self.slice = slice_limits
+        self.pid = pid
         self.dataset_path = config['general']['dataset_path']
-
         self.shape_predictor = 'shape_predictor_68_face_landmarks.dat'
         self.detector = dlib.get_frontal_face_detector()
         self.predictor = dlib.shape_predictor(self.shape_predictor)
@@ -32,12 +32,15 @@ class Converter:
         dataset_folder = os.path.dirname(self.dataset_path)
         processed_dataset_path = self.config['general']['processed_dataset_path']
         with open(self.dataset_path) as f:
-            dataset = json.load(f)[self.slice[0], self.slice[1]]
+            dataset = json.load(f)[self.slice[0]: self.slice[1]]
 
         new_dataset = []
         bad_gender_cnt = 0
         small_faces_cnt = 0
-        for record in tqdm(dataset, bar_format='Progress {bar} {percentage:3.0f}% [{elapsed}<{remaining}'):
+        for ind, record in enumerate(dataset):
+            if ind % 1000:
+                print(f'pid: {self.pid}, {ind} from {self.slice[1]-self.slice[0]} images processed, '
+                      f'{round(ind/(self.slice[1]-self.slice[0])*100,1)} %')
             if not isinstance(record['gender'], float):
                 bad_gender_cnt += 1
                 continue
@@ -75,15 +78,15 @@ class Converter:
             return aligned_face
 
     @staticmethod
-    def run_job(config, slice_limits):
-        converter = Converter(config, slice_limits)
+    def run_job(config, slice_limits, pid):
+        converter = Converter(config, slice_limits, pid)
         return converter.convert_dataset()
 
 
 class ConverterManager:
-    def __init__(self, config, n_jobs):
-        self.n_jobs = n_jobs
+    def __init__(self, config):
         self.config = config
+        self.n_jobs = config['general']['n_jobs']
         self.dataset_path = config['general']['dataset_path']
         self.processed_dataset_path = self.config['general']['processed_dataset_path']
 
@@ -93,10 +96,12 @@ class ConverterManager:
 
         with ProcessPoolExecutor(max_workers=self.n_jobs) as executor:
             futures = list()
-            subset_len = dataset_len / self.n_jobs
-            for start in range(0, dataset_len, subset_len):
-                finish = start + subset_len if start + 2*subset_len < dataset_len else dataset_len
-                futures.append(executor.submit(Converter.run_job, self.config, (start, finish)))
+            subsets = np.linspace(0, dataset_len, self.n_jobs + 1, dtype=np.int)
+            for ind in range(self.n_jobs):
+                start = subsets[ind]
+                finish = subsets[ind+1]
+                print('pid: ', ind, 'start: ', start,'finish: ', finish)
+                futures.append(executor.submit(Converter.run_job, self.config, (start, finish), ind))
 
             new_dataset = list()
             bad_gender_cnt, small_faces_cnt = 0, 0

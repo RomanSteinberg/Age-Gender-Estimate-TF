@@ -1,6 +1,6 @@
 import argparse
 from utils.config_parser import get_config
-from age_gender.utils.converter import Converter
+from age_gender.utils.converter import ConverterManager
 from age_gender.utils.dataset import train_test_split_dataset
 
 if __name__ == "__main__":
@@ -10,6 +10,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
     config = get_config('config.yaml')['prepare']
     if args.command == 'convert_dataset':
-        Converter(config).convert_dataset()
+        ConverterManager(config).run()
     else:
         train_test_split_dataset(config)
