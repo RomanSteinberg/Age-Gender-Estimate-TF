@@ -43,7 +43,7 @@ class Converter:
         small_faces_cnt = 0
         start_time = now()
         for ind, record in enumerate(dataset):
-            if ind % 1000 == 1:
+            if self.need_print(ind):
                 ratio = ind / total
                 eta = timedelta(seconds=(now() - start_time) * (1 - ratio) / (ratio + 1e-9))
                 print(f'pid: {self.pid}, progress: {round(ratio*100, 1)}% {ind}/{total} images, eta={eta}')
@@ -85,6 +85,17 @@ class Converter:
             return aligned_face
 
     @staticmethod
+    def need_print(ind):
+        if ind == 0:
+            return False
+        elif ind == 10:
+            return True
+        elif ind < 1000:
+            return ind % 100 == 0
+        else:
+            return ind % 1000 == 0
+
+    @staticmethod
     def run_job(config, slice_limits, pid):
         converter = Converter(config, slice_limits, pid)
         return converter.convert_dataset()
@@ -107,7 +118,7 @@ class ConverterManager:
             for ind in range(self.n_jobs):
                 start = subsets[ind]
                 finish = subsets[ind+1]
-                print('pid: ', ind, 'start: ', start,'finish: ', finish)
+                print(f'pid: {ind}, slice: [{start}:{finish}]')
                 futures.append(executor.submit(Converter.run_job, self.config, (start, finish), ind))
 
             new_dataset = list()
