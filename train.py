@@ -18,8 +18,9 @@ def run_training(config):
     os.makedirs(experiment_folder, exist_ok=True)
     log_dir = os.path.join(experiment_folder, 'logs')
 
-    dataset_len, global_step, train_mode, init_op, train_op, reset_global_step_op = create_computational_graph(config)
-    num_batches = (dataset_len + 1) // batch_size
+    dataset_size, global_step, train_mode, init_op, train_op, reset_global_step_op = create_computational_graph(config)
+    num_batches = (dataset_size + 1) // batch_size
+    print(f'Dataset size: {dataset_size}, epochs in train: {num_epochs}, batches in epoch: {num_batches}')
 
     with tf.Graph().as_default() and tf.Session() as sess:
         sess.run(init_op)
@@ -35,7 +36,7 @@ def run_training(config):
         if ckpt and ckpt.model_checkpoint_path:
             saver.restore(sess, ckpt.model_checkpoint_path)
             sess.run(reset_global_step_op)
-            print("restore and continue training!")
+            print('Pretrained model loaded')
         # todo: нужен код продолжения обучения модели, при этом номер эпохи должен начинаться не с 1
 
         start_time = {'train': datetime.now()}

@@ -5,14 +5,15 @@ import numpy as np
 import tensorflow as tf
 
 from age_gender.nets import inception_resnet_v1
-from age_gender.utils import inputs, get_files_name
+from age_gender.utils.queue_reader import inputs, get_file_names
 
 
 def test_once(image_path, batch_size, model_checkpoint_path):
     with tf.Graph().as_default():
         sess = tf.Session()
+        # todo: replace input with DataLoader
         images, age_labels, gender_labels, file_paths = inputs(
-            path=get_files_name(image_path),
+            path=get_file_names(image_path),
             batch_size=batch_size,
             num_epochs=1, allow_smaller_final_batch=True)
         train_mode = tf.placeholder(tf.bool)
