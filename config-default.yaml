@@ -3,18 +3,14 @@ general:
   logging_level: INFO
 
 
-dataset_to_tfrecords:
+prepare:
   general:
-    test_path: data
-    dataset_path: data
-    json_path: data/imdb.json
-    tfrecords_path: tfrecords
-    nworks: 4
+    dataset_path: data/dataset.json
     test_size: 0.2
+    processed_dataset_path: data/processed_data
+    n_jobs: 8
   image:
     size: 256
-    height_scale: 1.5
-    width_scale: 1.2
     face_score_threshold: 0.75
     face_area_threshold: 2500
 

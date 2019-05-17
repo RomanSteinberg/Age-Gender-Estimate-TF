@@ -8,8 +8,8 @@ def set_absolute_paths(d, working_dir):
         if isinstance(d[key], dict):
             set_absolute_paths(d[key], working_dir)
         else:
-            if 'path' in key:
-                d[key] = os.path.join(working_dir, str(d[key]))
+            if 'path' in key and os.path.abspath(d[key]) != d[key]:
+                d[key] = os.path.join(working_dir, d[key])
 
 
 def get_config(source='config-default.yaml', subproject=None):
@@ -24,7 +24,6 @@ def get_config(source='config-default.yaml', subproject=None):
 
     working_dir = os.path.abspath(config['general']['working_dir'])
     config['general']['working_dir'] = working_dir
-    print(working_dir)
     set_absolute_paths(config, working_dir)
     if subproject is None:
         return config
