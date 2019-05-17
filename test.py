@@ -4,8 +4,8 @@ import os
 import numpy as np
 import tensorflow as tf
 
-import inception_resnet_v1
-from utils import inputs, get_files_name
+from age_gender.nets import inception_resnet_v1
+from age_gender.utils import inputs, get_files_name
 
 
 def test_once(image_path, batch_size, model_checkpoint_path):

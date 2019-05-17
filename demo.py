@@ -1,12 +1,11 @@
-import os
 import cv2
 import dlib
 import numpy as np
 import argparse
-import inception_resnet_v1
+from age_gender.nets import inception_resnet_v1
 import tensorflow as tf
 from imutils.face_utils import FaceAligner
-from imutils.face_utils import rect_to_bb
+
 
 def get_args():
     parser = argparse.ArgumentParser(description="This script detects faces from web cam input, "

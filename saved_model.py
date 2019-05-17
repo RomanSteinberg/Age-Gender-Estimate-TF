@@ -1,6 +1,5 @@
 import tensorflow as tf
-import inception_resnet_v1
-
+from age_gender.nets import inception_resnet_v1
 
 sess = tf.Session()
 

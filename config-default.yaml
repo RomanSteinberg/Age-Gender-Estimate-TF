@@ -15,13 +15,14 @@ prepare:
     face_area_threshold: 2500
 
 train:
+  init:
+    dataset_path: data/imdb_1k/dataset.json  # путь к json-файлу с описанием датасета
+    model:   # имя модели для загрузки с диска
+    save_frequency: 5  # частота сохранения моделей
   learning_rate: 1e-3
   weight_decay: 1e-5
-  model_path: models
-  log_path: train_log
   epoch: 1
-  images: tfrecords/07-05-2019_12:35:06/train
-  batch_size: 30
+  batch_size: 16  # 30 максимум для GeForce 1060
   keep_prob: 0.8
   cuda: True
 

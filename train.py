@@ -1,169 +1,128 @@
-import argparse
 import os
-import time
 import yaml
 import tensorflow as tf
-from datetime import datetime
+from datetime import datetime, timedelta
 
-import inception_resnet_v1
-from utils.utils import inputs, get_files_name
-from utils.config_parser import get_config
+from age_gender.nets import inception_resnet_v1
+from age_gender.utils.dataloader import DataLoader
+from age_gender.utils.config_parser import get_config
 
 
 def run_training(config):
-    image_path = config['images']
+    working_dir = config['working_dir']
+    num_epochs = config['epoch']
     batch_size = config['batch_size']
-    epoch = config['epoch']
-    model_path = config['model_path']
-    log_dir = config['log_path']
-    start_lr = config['learning_rate']
-    wd = config['weight_decay']
-    kp = config['keep_prob']
-    epoch_number = 0
-    # from tensorflow.python.framework import ops
-    # ops.reset_default_graph()
-    # Tell TensorFlow that the model will be built into the default Graph.
-    with tf.Graph().as_default():
+    save_frequency = config['init']['save_frequency']
+    pretrained_model_folder = os.path.join(working_dir, 'models/pretrained_models')
+    experiment_folder = os.path.join(working_dir, 'experiments', datetime.now().strftime("%d-%m-%Y_%H:%M:%S"))
+    os.makedirs(experiment_folder, exist_ok=True)
+    log_dir = os.path.join(experiment_folder, 'logs')
 
-        # Create a session for running operations in the Graph.
-        sess = tf.Session()
+    dataset_len, global_step, train_mode, init_op, train_op, reset_global_step_op = create_computational_graph(config)
+    num_batches = (dataset_len + 1) // batch_size
 
-        # Input images and labels.
-        images, age_labels, gender_labels, _ = inputs(path=get_files_name(image_path), batch_size=batch_size,
-                                                      num_epochs=epoch)
-
-        # load network
-        # face_resnet = face_resnet_v2_generator(101, 'channels_first')
-        train_mode = tf.placeholder(tf.bool)
-        age_logits, gender_logits, _ = inception_resnet_v1.inference(images, keep_probability=kp,
-                                                                     phase_train=train_mode, weight_decay=wd)
-        # Build a Graph that computes predictions from the inference model.
-        # logits = face_resnet(images, train_mode)
-
-        # if you want to transfer weight from another model,please uncomment below codes
-        # sess = restore_from_source(sess,'./models')
-        # if you want to transfer weight from another model,please uncomment above codes
-
-        # Add to the Graph the loss calculation.
-        age_cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=age_labels, logits=age_logits)
-        age_cross_entropy_mean = tf.reduce_mean(age_cross_entropy)
-
-        gender_cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=gender_labels,
-                                                                              logits=gender_logits)
-        gender_cross_entropy_mean = tf.reduce_mean(gender_cross_entropy)
-
-        # l2 regularization
-        total_loss = tf.add_n(
-            [gender_cross_entropy_mean, age_cross_entropy_mean] + tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES))
-
-        age_ = tf.cast(tf.constant([i for i in range(0, 101)]), tf.float32)
-        age = tf.reduce_sum(tf.multiply(tf.nn.softmax(age_logits), age_), axis=1)
-        abs_loss = tf.losses.absolute_difference(age_labels, age)
-
-        gender_acc = tf.reduce_mean(tf.cast(tf.nn.in_top_k(gender_logits, gender_labels, 1), tf.float32))
-
-        tf.summary.scalar("age_cross_entropy", age_cross_entropy_mean)
-        tf.summary.scalar("gender_cross_entropy", gender_cross_entropy_mean)
-        tf.summary.scalar("total loss", total_loss)
-        tf.summary.scalar("train_abs_age_error", abs_loss)
-        tf.summary.scalar("gender_accuracy", gender_acc)
-
-        # Add to the Graph operations that train the model.
-        global_step = tf.Variable(0, name="global_step", trainable=False)
-        # global_step = tf.train.get_global_step()
-        lr = tf.train.exponential_decay(start_lr, global_step=global_step, decay_steps=3000, decay_rate=0.9,
-                                        staircase=True)
-        optimizer = tf.train.AdamOptimizer(lr)
-        tf.summary.scalar("lr", lr)
-        update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)  # update batch normalization layer
-        with tf.control_dependencies(update_ops):
-            train_op = optimizer.minimize(total_loss, global_step)
-
-        # if you want to transfer weight from another model,please comment below codes
-        init_op = tf.group(tf.global_variables_initializer(),
-                           tf.local_variables_initializer())
+    with tf.Graph().as_default() and tf.Session() as sess:
         sess.run(init_op)
-        # if you want to transfer weight from another model, please comment above codes
-
-        merged = tf.summary.merge_all()
+        summaries = tf.summary.merge_all()
         train_writer = tf.summary.FileWriter(log_dir, sess.graph)
 
         # if you want to transfer weight from another model,please uncomment below codes
         # sess, new_saver = save_to_target(sess,target_path='./models/new/',max_to_keep=100)
         # if you want to transfer weight from another model, please uncomment above codes
 
-        # if you want to transfer weight from another model,please comment below codes
-        new_saver = tf.train.Saver(max_to_keep=100)
-        pretrained_model_path = os.path.join(model_path,'pretrained_models')
-        print('pretrained_model_path',pretrained_model_path)
-        ckpt = tf.train.get_checkpoint_state(pretrained_model_path)
+        saver = tf.train.Saver(max_to_keep=100)
+        ckpt = tf.train.get_checkpoint_state(pretrained_model_folder)
         if ckpt and ckpt.model_checkpoint_path:
-            new_saver.restore(sess, ckpt.model_checkpoint_path)
+            saver.restore(sess, ckpt.model_checkpoint_path)
+            sess.run(reset_global_step_op)
             print("restore and continue training!")
-        else:
-            pass
-        # if you want to transfer weight from another model, please comment above codes
-        #
-        #
-        # Start input enqueue threads.
-        coord = tf.train.Coordinator()
-        threads = tf.train.start_queue_runners(sess=sess, coord=coord)
-        try:
-            step = sess.run(global_step)
-            start_time = time.time()
-            global_start = start_time
-            model_folder = datetime.now().strftime("%d-%m-%Y_%H:%M:%S")
-            p = os.path.join(model_path, 'trained_models', model_folder)
-            if not os.path.exists(p):
-                os.makedirs(p)
-            while not coord.should_stop():
-                # start_time = time.time()
-                # Run one step of the model.  The return values are
-                # the activations from the `train_op` (which is
-                # discarded) and the `loss` op.  To inspect the values
-                # of your ops or variables, you may include them in
-                # the list passed to sess.run() and the value tensors
-                # will be returned in the tuple from the call.
-                _, summary = sess.run([train_op, merged], {train_mode: True})
+        # todo: нужен код продолжения обучения модели, при этом номер эпохи должен начинаться не с 1
+
+        start_time = {'train': datetime.now()}
+
+        for epoch in range(1, num_epochs+1):
+            start_time.update({'epoch': datetime.now()})
+            for batch_idx in range(num_batches):
+                _, summary, step = sess.run([train_op, summaries, global_step], {train_mode: True})
                 train_writer.add_summary(summary, step)
-                # duration = time.time() - start_time
-                # # Print an overview fairly often.
-                # if step % 100 == 0:
-                #     duration = time.time() - start_time
-                #     print('%.3f sec' % duration)
-                #     start_time = time.time()
-                if (step-14001) % 2882 == 0:
-                    epoch_number += 1
-                    print('epoch_number: ',epoch_number,'time: ',time.time() - start_time)
-                    start_time = time.time()
-                if (step-14001) % 8646 == 0:
-                    save_path = new_saver.save(sess, os.path.join(model_path,'trained_models',model_folder, "model.ckpt"), global_step=global_step)
-                    print("Model saved in file: %s" % save_path)
-                    duration = time.time() - global_start
-                    config['duration'] = duration
-                    json_parameters_path = os.path.join(model_path, 'trained_models', model_folder, "params.yaml")
-                    with open(json_parameters_path, 'w') as file:
-                        yaml.dump(config, file, default_flow_style=False)
-                step = sess.run(global_step)
-        except tf.errors.OutOfRangeError:
-            print('Done training for %d epochs, %d steps.' % (epoch, step))
-        finally:
-            duration = time.time() - global_start
-            config['duration'] = duration
-            json_parameters_path = os.path.join(model_path,'trained_models',model_folder, "params.yaml")
-            with open(json_parameters_path, 'w') as file:
-                yaml.dump(config, file, default_flow_style=False)
-            # When done, ask the threads to stop.
-            save_path = new_saver.save(sess, os.path.join(model_path,'trained_models',model_folder, "model.ckpt"), global_step=global_step)
-            print("Model saved in file: %s" % save_path)
-            coord.request_stop()
-        # Wait for threads to finish.
-        coord.join(threads)
-        sess.close()
+
+            t = time_spent(start_time['epoch'])
+            print(f'Epoch {epoch} spent {t}')
+            if epoch % save_frequency == 0 or epoch == 1:
+                save_path = saver.save(sess, os.path.join(experiment_folder, "model.ckpt"), global_step=epoch)
+                save_hyperparameters(config, experiment_folder, start_time)
+                print("Model saved in file: %s" % save_path)
+
+        save_path = saver.save(sess, os.path.join(experiment_folder, "model.ckpt"), global_step=epoch)
+        save_hyperparameters(config, experiment_folder, start_time)
+        print("Model saved in file: %s" % save_path)
+
+
+def save_hyperparameters(config, experiment_folder, start_time):
+    config['duration'] = time_spent(start_time['train'])
+    json_parameters_path = os.path.join(experiment_folder, "hyperparams.yaml")
+    with open(json_parameters_path, 'w') as file:
+        yaml.dump(config, file, default_flow_style=False)
+
+
+def create_computational_graph(config):
+    dataset_path = config['init']['dataset_path']
+    face_area_threshold = config['face_area_threshold']
+    start_lr = config['learning_rate']
+    wd = config['weight_decay']
+    kp = config['keep_prob']
+    batch_size = config['batch_size']
+    epochs = config['epoch']
+
+    loader = DataLoader(dataset_path, face_area_threshold)
+    dataset = loader.create_dataset(True, epochs, batch_size)
+    dataset_len = loader.dataset_len()
+    iterator = dataset.make_one_shot_iterator()
+    images, age_labels, gender_labels, im_paths = iterator.get_next()
+
+    train_mode = tf.placeholder(tf.bool)
+    age_logits, gender_logits, _ = inception_resnet_v1.inference(images, keep_probability=kp,
+                                                                 phase_train=train_mode, weight_decay=wd)
+
+    # head
+    age_cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=age_labels, logits=age_logits)
+    age_cross_entropy_mean = tf.reduce_mean(age_cross_entropy)
+    gender_cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=gender_labels,
+                                                                          logits=gender_logits)
+    gender_cross_entropy_mean = tf.reduce_mean(gender_cross_entropy)
+
+    # l2 regularization
+    total_loss = tf.add_n(
+        [gender_cross_entropy_mean, age_cross_entropy_mean] + tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES))
+    age_ = tf.cast(tf.constant([i for i in range(0, 101)]), tf.float32)
+    age = tf.reduce_sum(tf.multiply(tf.nn.softmax(age_logits), age_), axis=1)
+    abs_loss = tf.losses.absolute_difference(age_labels, age)
+    gender_acc = tf.reduce_mean(tf.cast(tf.nn.in_top_k(gender_logits, gender_labels, 1), tf.float32))
+    tf.summary.scalar("age_cross_entropy", age_cross_entropy_mean)
+    tf.summary.scalar("gender_cross_entropy", gender_cross_entropy_mean)
+    tf.summary.scalar("total loss", total_loss)
+    tf.summary.scalar("train_abs_age_error", abs_loss)
+    tf.summary.scalar("gender_accuracy", gender_acc)
+    global_step = tf.Variable(0, name="global_step", trainable=False)
+    reset_global_step_op = tf.assign(global_step, 0)
+    lr = tf.train.exponential_decay(start_lr, global_step=global_step, decay_steps=3000, decay_rate=0.9, staircase=True)
+    optimizer = tf.train.AdamOptimizer(lr)
+    tf.summary.scalar("lr", lr)
+    update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)  # update batch normalization layer
+    with tf.control_dependencies(update_ops):
+        train_op = optimizer.minimize(total_loss, global_step)
+
+    init_op = tf.group(tf.global_variables_initializer(), tf.local_variables_initializer())
+    return dataset_len, global_step, train_mode, init_op, train_op, reset_global_step_op
+
+
+def time_spent(start):
+    sec = int((datetime.now() - start).total_seconds())
+    return str(timedelta(seconds=sec))
 
 
 if __name__ == '__main__':
-    config = get_config('config.yaml')['train']
+    config = get_config('config.yaml', 'train')
     if not config['cuda']:
         os.environ['CUDA_VISIBLE_DEVICES'] = ''
     run_training(config)

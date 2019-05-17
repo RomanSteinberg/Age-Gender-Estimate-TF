@@ -9,7 +9,7 @@ import tensorflow as tf
 from imutils.face_utils import FaceAligner
 from imutils.face_utils import rect_to_bb
 
-import inception_resnet_v1
+from age_gender.nets import inception_resnet_v1
 
 os.environ['CUDA_VISIBLE_DEVICES'] = ''
 

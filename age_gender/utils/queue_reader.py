@@ -85,7 +85,7 @@ def inputs(path, batch_size, num_epochs, allow_smaller_final_batch=False):
         return images, sparse_labels, genders, file_paths
 
 
-def get_files_name(path):
+def get_file_names(path):
     list = os.listdir(path)
     result = []
     for line in list:

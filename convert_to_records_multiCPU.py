@@ -17,7 +17,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import math
 # use multi CPU
 import multiprocessing
 import os
@@ -31,8 +30,7 @@ import tensorflow as tf
 
 from datetime import datetime
 from imutils.face_utils import FaceAligner
-from sklearn.model_selection import train_test_split
-from utils.config_parser import get_config
+from age_gender.utils.config_parser import get_config
 FLAGS = None
 
 
@@ -56,18 +54,18 @@ def normalize_rect(rect):
 
 def scale(x_scale, y_scale, rect):
     left, top, right, bottom = rect
-    weight = (right - left)/2
+    width = (right - left)/2
     height = (bottom - top)/2
     center_x = (left + right)/2
     center_y = (top + bottom)/2
-    left = int(center_x - weight*x_scale)
-    top = int(center_y - height*y_scale)
-    right = int(center_x + weight*x_scale)
-    bottom = int(center_y + height*y_scale)
+    left = int(center_x - width * x_scale)
+    top = int(center_y - height * y_scale)
+    right = int(center_x + width * x_scale)
+    bottom = int(center_y + height * y_scale)
     return [left, top, right, bottom]
 
 
-def align_face(config, rect, face_aligner, image, gray_image):
+def align_face(config, rect, face_aligner, image):
     height_scale = config['height_scale']
     width_scale = config['width_scale']
     left = rect.left()
@@ -77,7 +75,9 @@ def align_face(config, rect, face_aligner, image, gray_image):
     scaled_rect = scale(width_scale, height_scale, [left, top, right, bottom])
     normilized_rect = normalize_rect(scaled_rect)
     dlib_rect = dlib.rectangle(*normilized_rect)
+    gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)  # зачем это aligner-у?
     image_raw = face_aligner.align(image, gray_image, dlib_rect)
+    print(image_raw.shape)
     return image_raw
 
 
@@ -135,7 +135,6 @@ def convert_to(data_set, name, i, config, tfrecords_folder):
             try:
                 image = cv2.imread(os.path.join(dataset_folder, str(file_name[index][0])), cv2.IMREAD_COLOR)
                 image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-                gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
                 rects = detector(image, 2)
                 if len(rects) != 1:
                     continue
@@ -144,7 +143,7 @@ def convert_to(data_set, name, i, config, tfrecords_folder):
                     if area < face_area_threshold:
                         small_images+=1
                         continue
-                    aligned_face = align_face(config['image'], rects[0], face_aligner, image, gray_image)
+                    aligned_face = align_face(config['image'], rects[0], face_aligner, image)
                     image_raw = aligned_face.tostring()
             except IOError:  # some files seem not exist in face_data dir
                 error = error + 1
@@ -173,24 +172,25 @@ def main(config):
 
     start_time = time.time()
     dataset = pd.read_json(dataset_path)
-    train_sets, test_sets = train_test_split(dataset, test_size=test_size, random_state=2017)
-    train_sets.reset_index(drop=True, inplace=True)
-    test_sets.reset_index(drop=True, inplace=True)
-    train_nums = train_sets.shape[0]
-    test_nums = test_sets.shape[0]
+    train = dataset
+    #train_sets, test_sets = train_test_split(data_sets, test_size=test_size, random_state=2017)
+    train.reset_index(drop=True, inplace=True)
+    #test_sets.reset_index(drop=True, inplace=True)
+    train_nums = train.shape[0]
+    #test_nums = test_sets.shape[0]
     train_idx = np.linspace(0, train_nums, cpu_cores + 1, dtype=np.int)
-    test_idx = np.linspace(0, test_nums, cpu_cores + 1, dtype=np.int)
+    #test_idx = np.linspace(0, test_nums, cpu_cores + 1, dtype=np.int)
     # multi cpu
     pool = multiprocessing.Pool(processes=cpu_cores)
     for p in range(cpu_cores):
-        print(train_sets[train_idx[p]:train_idx[p + 1] - 1].shape)
+        print(train[train_idx[p]:train_idx[p + 1] - 1].shape)
         pool.apply_async(convert_to,
-                         (train_sets[train_idx[p]:train_idx[p + 1] - 1].copy().reset_index(drop=True), 'train', p,
+                         (train[train_idx[p]:train_idx[p + 1] - 1].copy().reset_index(drop=True), 'train', p,
                           config, tfrecords_folder))
-    for p in range(cpu_cores):
-        pool.apply_async(convert_to,
-                         (test_sets[test_idx[p]:test_idx[p + 1] - 1].copy().reset_index(drop=True), 'test', p,
-                          config, tfrecords_folder))
+    #for p in range(cpu_cores):
+    #    pool.apply_async(convert_to,
+    #                     (test_sets[test_idx[p]:test_idx[p + 1] - 1].copy().reset_index(drop=True), 'test', p,
+    #                      config, tfrecords_folder))
     pool.close()
     pool.join()
 
