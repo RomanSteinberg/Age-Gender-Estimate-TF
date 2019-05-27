@@ -5,9 +5,11 @@ import tensorflow as tf
 from datetime import datetime, timedelta
 
 from age_gender.nets import inception_resnet_v1
+from age_gender.nets.resnet_v2_50 import build_resnet
 from age_gender.utils.dataloader import DataLoader
 from age_gender.utils.config_parser import get_config
 
+from tensorflow.python import debug as tf_debug
 
 class ModelManager:
     def __init__(self, config):
@@ -23,7 +25,8 @@ class ModelManager:
         self.experiment_folder = os.path.join(working_dir, 'experiments', datetime.now().strftime("%d-%m-%Y_%H:%M:%S"))
 
         # operations
-        self.global_step = tf.Variable(0, name='global_step', trainable=False)
+        # self.global_step = tf.Variable(0, name='global_step', trainable=False)
+        self.global_step = tf.train.get_or_create_global_step()
         self.train_mode = tf.placeholder(tf.bool)
         self.init_op = None
         self.train_op = None
@@ -39,6 +42,8 @@ class ModelManager:
         self.test_images = tf.placeholder(tf.float32, shape=[self.batch_size, 256, 256, 3])
         self.test_age_labels = tf.placeholder(tf.int32)
         self.test_gender_labels = tf.placeholder(tf.int32)
+
+        self.init_fn = None
 
     def train(self):
         os.makedirs(self.experiment_folder, exist_ok=True)
@@ -58,7 +63,9 @@ class ModelManager:
         print(f'Epochs in train: {self.num_epochs}, batches in epoch: {num_batches}')
 
         with tf.Graph().as_default() and tf.Session() as sess:
-            sess.run([self.init_op])
+            tf.random.set_random_seed(100)
+            sess.run(self.init_op)
+            self.init_fn(sess)
             # summaries = tf.summary.merge_all()
             train_writer = tf.summary.FileWriter(log_dir, sess.graph)
 
@@ -67,35 +74,41 @@ class ModelManager:
             # if you want to transfer weight from another model, please uncomment above codes
 
             saver = tf.train.Saver(max_to_keep=100)
-            ckpt = tf.train.get_checkpoint_state(self.pretrained_model_folder)
-            if ckpt and ckpt.model_checkpoint_path:
-                saver.restore(sess, ckpt.model_checkpoint_path)
-                sess.run(self.reset_global_step_op)
-                print('Pretrained model loaded')
+            # ckpt = tf.train.get_checkpoint_state(self.pretrained_model_folder)
+            # if ckpt and ckpt.model_checkpoint_path:
+            #     saver.restore(sess, ckpt.model_checkpoint_path)
+            #     sess.run(self.reset_global_step_op)
+            #     print('Pretrained model loaded')
             # todo: нужен код продолжения обучения модели, при этом номер эпохи должен начинаться не с 1
 
             start_time = {'train': datetime.now()}
-
+            fpaths = list()
             for epoch in range(1, self.num_epochs+1):
                 sess.run(self.train_init_op)
                 start_time.update({'train_epoch': datetime.now()})
                 for batch_idx in range(num_batches):
-                    train_images, train_age_labels, train_gender_labels, _ = sess.run(next_data_element)
-                    for idx, img in enumerate(train_images):
-                        image = (img+1)*127.5
-                        if image.sum() < np.sum(image.shape):
-                            print(f'Wow {epoch} {batch_idx}')
-                        if batch_idx > 125:
-                            print(f'Batch {batch_idx}, image.sum {image.sum()}, image.shape {image.shape}')
-                        # image = cv2.cvtColor(np.array(image, dtype=np.uint8), cv2.COLOR_BGR2RGB)
-                        image = np.array(image, dtype=np.uint8)
-                        cv2.imwrite(f'/home/roman/dev/age-gender/experiments/test/3/{batch_idx}_{idx}.jpg', image)
+                    train_images, train_age_labels, train_gender_labels, file_paths = sess.run(next_data_element)
+                    fpaths += [fp.decode('utf-8') for fp in file_paths]
+                    # print(fpaths, type(fpaths[0]))
+                    #with open('./files.json', 'w') as f:
+                    #    import json
+                    #    json.dump(fpaths, f)
+                    # for idx, img in enumerate(train_images):
+                    #     image = (img+1)*127.5
+                    #     if image.sum() < np.sum(image.shape):
+                    #         print(f'Wow {epoch} {batch_idx}')
+                    #     if batch_idx > 125:
+                    #         print(f'Batch {batch_idx}, image.sum {image.sum()}, image.shape {image.shape}')
+                    #     # image = cv2.cvtColor(np.array(image, dtype=np.uint8), cv2.COLOR_BGR2RGB)
+                    #     image = np.array(image, dtype=np.uint8)
+                    #     cv2.imwrite(f'/home/roman/dev/age-gender/experiments/test/3/{batch_idx}_{idx}.jpg', image)
 
                     feed_dict = {self.train_mode: True,
                                  self.images: train_images,  # np.zeros([16, 256, 256, 3])
                                  self.age_labels: train_age_labels,
                                  self.gender_labels: train_gender_labels}
-                    _, summary, step = sess.run([self.train_op, self.train_summary, self.global_step], feed_dict=feed_dict)
+                    _, summary, step, _ = sess.run([self.train_op, self.train_summary, self.global_step, self.verify], feed_dict=feed_dict)
+                    print(f'step: {step}')
                     # for idx, img in enumerate(images):
                     #     image = (img+1)*127.5
                     #     # image = img
@@ -141,6 +154,9 @@ class ModelManager:
         with open(json_parameters_path, 'w') as file:
             yaml.dump(config, file, default_flow_style=False)
 
+    def create_computational_graph2(self):
+        pass
+
     def create_computational_graph(self):
         start_lr = self._config['learning_rate']
         wd = self._config['weight_decay']
@@ -156,9 +172,13 @@ class ModelManager:
 
         # self.test_images = train_images
         # age_labels, gender_labels, images = train_age_labels, train_gender_labels, train_images
-        age_logits, gender_logits, _ = inception_resnet_v1.inference(self.images, keep_probability=kp,
-                                                                     phase_train=True, weight_decay=wd)
-
+        # age_logits, gender_logits, _ = inception_resnet_v1.inference(self.images, keep_probability=kp,
+        #                                                              phase_train=True, weight_decay=wd)
+        self.init_fn, age_logits, gender_logits = build_resnet(self.images)
+        bottleneck = [v for v in
+                         tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='Head')]  # Incep
+        for var in bottleneck:
+            self.verify = tf.verify_tensor_all_finite(var, var.name)
         # head
         age_cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.age_labels, logits=age_logits)
         age_cross_entropy_mean = tf.reduce_mean(age_cross_entropy)
@@ -211,7 +231,7 @@ class ModelManager:
         if mode == 'train':
             helper('lr', lr)
             bottleneck = [v for v in
-                          tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='InceptionResnetV1/Bottleneck')]
+                          tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='Head')]  # Incep
             for var in bottleneck:
                 summaries.append(tf.summary.histogram(var.name, var))
         return tf.summary.merge(summaries)
