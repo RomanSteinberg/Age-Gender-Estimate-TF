@@ -1,15 +1,12 @@
 import os
 import yaml
-import numpy as np, cv2
 import tensorflow as tf
 from datetime import datetime, timedelta
 
-from age_gender.nets import inception_resnet_v1
 from age_gender.nets.resnet_v2_50 import build_resnet
 from age_gender.utils.dataloader import DataLoader
 from age_gender.utils.config_parser import get_config
 
-from tensorflow.python import debug as tf_debug
 
 class ModelManager:
     def __init__(self, config):
@@ -21,11 +18,9 @@ class ModelManager:
         self.num_epochs = config['epochs']
         working_dir = config['working_dir']
         self.save_frequency = config['init']['save_frequency']
-        self.pretrained_model_folder = os.path.join(working_dir, 'models/pretrained_models')
         self.experiment_folder = os.path.join(working_dir, 'experiments', datetime.now().strftime("%d-%m-%Y_%H:%M:%S"))
 
         # operations
-        # self.global_step = tf.Variable(0, name='global_step', trainable=False)
         self.global_step = tf.train.get_or_create_global_step()
         self.train_mode = tf.placeholder(tf.bool)
         self.init_op = None
@@ -48,15 +43,8 @@ class ModelManager:
     def train(self):
         os.makedirs(self.experiment_folder, exist_ok=True)
         log_dir = os.path.join(self.experiment_folder, 'logs')
-
-        # n = self.create_computational_graph()
-        # with tf.Graph().as_default() and tf.Session() as sess:
-        #     sess.run(self.train_init_op)
-        #     print(sess.run(n))
-        # return
         self.create_computational_graph()
         next_data_element, self.train_init_op, self.train_size = self.init_data_loader('train')
-        # next_test_data, self.test_init_op, self.test_size = self.init_data_loader('test')
 
         num_batches = (self.train_size + 1) // self.batch_size
         print(f'Train size: {self.train_size}, test size: {self.test_size}')
@@ -66,19 +54,8 @@ class ModelManager:
             tf.random.set_random_seed(100)
             sess.run(self.init_op)
             self.init_fn(sess)
-            # summaries = tf.summary.merge_all()
             train_writer = tf.summary.FileWriter(log_dir, sess.graph)
-
-            # if you want to transfer weight from another model,please uncomment below codes
-            # sess, new_saver = save_to_target(sess,target_path='./models/new/',max_to_keep=100)
-            # if you want to transfer weight from another model, please uncomment above codes
-
             saver = tf.train.Saver(max_to_keep=100)
-            # ckpt = tf.train.get_checkpoint_state(self.pretrained_model_folder)
-            # if ckpt and ckpt.model_checkpoint_path:
-            #     saver.restore(sess, ckpt.model_checkpoint_path)
-            #     sess.run(self.reset_global_step_op)
-            #     print('Pretrained model loaded')
             # todo: нужен код продолжения обучения модели, при этом номер эпохи должен начинаться не с 1
 
             start_time = {'train': datetime.now()}
@@ -89,57 +66,20 @@ class ModelManager:
                 for batch_idx in range(num_batches):
                     train_images, train_age_labels, train_gender_labels, file_paths = sess.run(next_data_element)
                     fpaths += [fp.decode('utf-8') for fp in file_paths]
-                    # print(fpaths, type(fpaths[0]))
-                    #with open('./files.json', 'w') as f:
-                    #    import json
-                    #    json.dump(fpaths, f)
-                    # for idx, img in enumerate(train_images):
-                    #     image = (img+1)*127.5
-                    #     if image.sum() < np.sum(image.shape):
-                    #         print(f'Wow {epoch} {batch_idx}')
-                    #     if batch_idx > 125:
-                    #         print(f'Batch {batch_idx}, image.sum {image.sum()}, image.shape {image.shape}')
-                    #     # image = cv2.cvtColor(np.array(image, dtype=np.uint8), cv2.COLOR_BGR2RGB)
-                    #     image = np.array(image, dtype=np.uint8)
-                    #     cv2.imwrite(f'/home/roman/dev/age-gender/experiments/test/3/{batch_idx}_{idx}.jpg', image)
 
                     feed_dict = {self.train_mode: True,
                                  self.images: train_images,  # np.zeros([16, 256, 256, 3])
                                  self.age_labels: train_age_labels,
                                  self.gender_labels: train_gender_labels}
-                    _, summary, step, _ = sess.run([self.train_op, self.train_summary, self.global_step, self.verify], feed_dict=feed_dict)
+                    _, summary, step = sess.run([self.train_op, self.train_summary, self.global_step],
+                                                feed_dict=feed_dict)
                     print(f'step: {step}')
-                    # for idx, img in enumerate(images):
-                    #     image = (img+1)*127.5
-                    #     # image = img
-                    #     if image.sum() < np.sum(image.shape):
-                    #         print(f'Wow {epoch} {batch_idx}')
-                    #     if batch_idx > 125:
-                    #         print(f'Batch {batch_idx}, image.sum {image.sum()}')
-                    #     # image = cv2.cvtColor(np.array(image, dtype=np.uint8), cv2.COLOR_BGR2RGB)
-                    #     image = np.array(image, dtype=np.uint8)
-                    #     cv2.imwrite(f'/home/roman/dev/age-gender/experiments/test/3/{batch_idx}_{idx}.jpg', image)
-                    # if all([img.sum() > 512 for img in imgs]):
-                    #     print(f'Wow {epoch} {batch_idx}')
                     train_writer.add_summary(summary, step)
 
                 t = time_spent(start_time['train_epoch'])
                 print(f'Train epoch {epoch} takes {t}')
 
                 if epoch % self.save_frequency == 0 or epoch == 1:
-                    # start_time.update({'test_epoch': datetime.now()})
-                    # sess.run([self.train_init_op, self.test_init_op])
-                    # for batch_idx in range((self.test_size + 1) // self.batch_size):
-                    #     test_images, test_age_labels, test_gender_labels, _ = sess.run(next_test_data)
-                    #     feed_dict = {self.train_mode: False,
-                    #                  self.test_images: test_images,
-                    #                  self.test_age_labels: test_age_labels,
-                    #                  self.test_gender_labels: test_gender_labels}
-                    #     summary = sess.run(self.test_summary, feed_dict=feed_dict)
-                    #     train_writer.add_summary(summary, step - num_batches + batch_idx)
-                    # t = time_spent(start_time['test_epoch'])
-                    # print(f'Test epoch {epoch} takes {t}')
-
                     save_path = saver.save(sess, os.path.join(self.experiment_folder, "model.ckpt"), global_step=epoch)
                     self.save_hyperparameters(start_time)
                     print("Model saved in file: %s" % save_path)
@@ -154,31 +94,10 @@ class ModelManager:
         with open(json_parameters_path, 'w') as file:
             yaml.dump(config, file, default_flow_style=False)
 
-    def create_computational_graph2(self):
-        pass
-
     def create_computational_graph(self):
         start_lr = self._config['learning_rate']
-        wd = self._config['weight_decay']
-        kp = self._config['keep_prob']
-
-        # next_data_element, self.train_init_op, self.train_size = self.init_data_loader('train')
-        # train_images, train_age_labels, train_gender_labels, _ = next_data_element
-        # next_data_element, self.test_init_op, self.test_size = self.init_data_loader('test')
-        # test_images, test_age_labels, test_gender_labels, _ = next_data_element
-        # age_labels, gender_labels, images = tf.cond(self.train_mode,
-        #                                             lambda: [train_age_labels, train_gender_labels, train_images],
-        #                                             lambda: [self.test_age_labels, self.test_gender_labels, self.test_images])
-
-        # self.test_images = train_images
-        # age_labels, gender_labels, images = train_age_labels, train_gender_labels, train_images
-        # age_logits, gender_logits, _ = inception_resnet_v1.inference(self.images, keep_probability=kp,
-        #                                                              phase_train=True, weight_decay=wd)
         self.init_fn, age_logits, gender_logits = build_resnet(self.images)
-        bottleneck = [v for v in
-                         tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='Head')]  # Incep
-        for var in bottleneck:
-            self.verify = tf.verify_tensor_all_finite(var, var.name)
+
         # head
         age_cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.age_labels, logits=age_logits)
         age_cross_entropy_mean = tf.reduce_mean(age_cross_entropy)
@@ -195,7 +114,8 @@ class ModelManager:
         gender_acc = tf.reduce_mean(tf.cast(tf.nn.in_top_k(gender_logits, self.gender_labels, 1), tf.float32))
 
         self.reset_global_step_op = tf.assign(self.global_step, 0)
-        lr = tf.train.exponential_decay(start_lr, global_step=self.global_step, decay_steps=3000, decay_rate=0.9, staircase=True)
+        lr = tf.train.exponential_decay(start_lr, global_step=self.global_step, decay_steps=3000, decay_rate=0.9,
+                                        staircase=True)
 
         metrics_and_errors = [abs_loss, age_cross_entropy_mean, gender_acc, gender_cross_entropy_mean, total_loss]
         self.train_summary = self.define_summaries(metrics_and_errors, lr, 'train')
@@ -205,14 +125,12 @@ class ModelManager:
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)  # update batch normalization layer
         with tf.control_dependencies(update_ops):
             self.train_op = optimizer.minimize(total_loss, self.global_step)
-
         self.init_op = tf.group(tf.global_variables_initializer(), tf.local_variables_initializer())
 
     def init_data_loader(self, mode):
         dataset_path = self._config['init'][f'{mode}_dataset_path']
         loader = DataLoader(dataset_path)
-        dataset = loader.create_dataset(perform_shuffle=mode == 'train', batch_size=self.batch_size)
-
+        dataset = loader.create_dataset(perform_shuffle=False, batch_size=self.batch_size)
         iterator = tf.data.Iterator.from_structure(dataset.output_types, dataset.output_shapes)
         next_data_element = iterator.get_next()
         training_init_op = iterator.make_initializer(dataset)
