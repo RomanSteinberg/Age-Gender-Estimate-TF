@@ -36,15 +36,13 @@ class ModelManager:
         self.age_labels = tf.placeholder(tf.int32)
         self.gender_labels = tf.placeholder(tf.int32)
         # todo: вынести константы
-        self.test_images = tf.placeholder(tf.float32, shape=[self.batch_size, 256, 256, 3])
-        self.test_age_labels = tf.placeholder(tf.int32)
-        self.test_gender_labels = tf.placeholder(tf.int32)
 
     def train(self):
         os.makedirs(self.experiment_folder, exist_ok=True)
         log_dir = os.path.join(self.experiment_folder, 'logs')
         self.create_computational_graph()
         next_data_element, self.train_init_op, self.train_size = self.init_data_loader('train')
+        next_test_data, self.test_init_op, self.test_size = self.init_data_loader('test')
 
         num_batches = (self.train_size + 1) // self.batch_size
         print(f'Train size: {self.train_size}, test size: {self.test_size}')
@@ -83,18 +81,18 @@ class ModelManager:
                 print(f'Train epoch {epoch} takes {t}')
 
                 if epoch % self.save_frequency == 0 or epoch == 1:
-                    # start_time.update({'test_epoch': datetime.now()})
-                    # sess.run([self.train_init_op, self.test_init_op])
-                    # for batch_idx in range((self.test_size + 1) // self.batch_size):
-                    #     test_images, test_age_labels, test_gender_labels, _ = sess.run(next_test_data)
-                    #     feed_dict = {self.train_mode: False,
-                    #                  self.test_images: test_images,
-                    #                  self.test_age_labels: test_age_labels,
-                    #                  self.test_gender_labels: test_gender_labels}
-                    #     summary = sess.run(self.test_summary, feed_dict=feed_dict)
-                    #     train_writer.add_summary(summary, step - num_batches + batch_idx)
-                    # t = time_spent(start_time['test_epoch'])
-                    # print(f'Test epoch {epoch} takes {t}')
+                    start_time.update({'test_epoch': datetime.now()})
+                    sess.run([self.test_init_op])
+                    for batch_idx in range((self.test_size + 1) // self.batch_size):
+                        test_images, test_age_labels, test_gender_labels, _ = sess.run(next_test_data)
+                        feed_dict = {self.train_mode: False,
+                                     self.images: test_images,
+                                     self.age_labels: test_age_labels,
+                                     self.gender_labels: test_gender_labels}
+                        summary = sess.run(self.test_summary, feed_dict=feed_dict)
+                        train_writer.add_summary(summary, step - num_batches + batch_idx)
+                    t = time_spent(start_time['test_epoch'])
+                    print(f'Test epoch {epoch} takes {t}')
 
                     save_path = saver.save(sess, os.path.join(self.experiment_folder, "model.ckpt"), global_step=epoch)
                     self.save_hyperparameters(start_time)
