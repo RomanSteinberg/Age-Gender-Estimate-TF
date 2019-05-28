@@ -10,7 +10,7 @@ from convert_to_records_multiCPU import get_area, align_face
 
 
 class DataLoader:
-    def __init__(self, data_description_path, face_area_threshold):
+    def __init__(self, data_description_path):
         """
         Args:
             data_description_path (string): json description file path.
@@ -42,8 +42,9 @@ class DataLoader:
         image_tn = tf.image.decode_image(image_string, channels=3)
         image_tn.set_shape([None, None, 3])  # important!
         image_tn = tf.reshape(image_tn, self.image_shape)
-        image_tn = tf.reverse_v2(image_tn, [-1])
-        image_tn = tf.image.per_image_standardization(image_tn)
+        image_tn = tf.reverse(image_tn, [-1])
+        # image_tn = tf.image.per_image_standardization(image_tn)
+        image_tn = tf.math.subtract(tf.math.divide(tf.cast(image_tn, dtype=tf.float32), tf.constant(127.5)), tf.constant(1.0))
         return image_tn, age, gender, file_path
 
     def create_dataset(self, perform_shuffle=False, repeat_count=1, batch_size=1):
@@ -87,7 +88,7 @@ def visual_validation(config):
     batch_size = 3
     epochs = 2
 
-    dataset = DataLoader(dataset_path, face_area_threshold).create_dataset(True, epochs, batch_size)
+    dataset = DataLoader(dataset_path).create_dataset(True, epochs, batch_size)
     iterator = dataset.make_one_shot_iterator()
     all_tn = iterator.get_next()
 

@@ -16,12 +16,13 @@ prepare:
 
 train:
   init:
-    dataset_path: data/imdb_1k/dataset.json  # путь к json-файлу с описанием датасета
+    train_dataset_path: data/imdb_wiki/train.json  # путь к json-файлу с описанием датасета для обучения
+    test_dataset_path: data/imdb_wiki/test.json  # путь к json-файлу с описанием датасета для валидации во время обучения
     model:   # имя модели для загрузки с диска
     save_frequency: 5  # частота сохранения моделей
   learning_rate: 1e-3
   weight_decay: 1e-5
-  epoch: 1
+  epochs: 1
   batch_size: 16  # 30 максимум для GeForce 1060
   keep_prob: 0.8
   cuda: True

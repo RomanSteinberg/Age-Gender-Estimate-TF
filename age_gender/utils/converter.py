@@ -111,7 +111,7 @@ class ConverterManager:
     def run(self):
         with open(self.dataset_path) as f:
             dataset_len = len(json.load(f))
-
+        dataset_len = 1640
         with ProcessPoolExecutor(max_workers=self.n_jobs) as executor:
             futures = list()
             subsets = np.linspace(0, dataset_len, self.n_jobs + 1, dtype=np.int)

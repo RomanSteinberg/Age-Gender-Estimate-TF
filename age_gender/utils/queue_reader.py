@@ -76,11 +76,12 @@ def inputs(path, batch_size, num_epochs, allow_smaller_final_batch=False):
         # Shuffle the examples and collect them into batch_size batches.
         # (Internally uses a RandomShuffleQueue.)
         # We run this in two threads to avoid being a bottleneck.
-        images, sparse_labels, genders, file_paths = tf.train.shuffle_batch(
+        images, sparse_labels, genders, file_paths = tf.train.batch(
             [image, age, gender, file_path], batch_size=batch_size, num_threads=12,
             capacity=1000 + 3 * batch_size,
             # Ensures a minimum amount of shuffling of examples.
-            min_after_dequeue=1000, allow_smaller_final_batch=allow_smaller_final_batch)
+            #min_after_dequeue=1000, seed = 100, 
+            allow_smaller_final_batch=allow_smaller_final_batch)
 
         return images, sparse_labels, genders, file_paths
 
