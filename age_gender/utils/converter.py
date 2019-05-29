@@ -39,8 +39,7 @@ class Converter:
 
         total = self.slice[1] - self.slice[0]
         new_dataset = []
-        bad_gender_cnt = 0
-        small_faces_cnt = 0
+        bad_records = {'age': 0, 'gender': 0, 'small_faces': 0}
         start_time = now()
         for ind, record in enumerate(dataset):
             if self.need_print(ind):
@@ -48,7 +47,13 @@ class Converter:
                 eta = timedelta(seconds=(now() - start_time) * (1 - ratio) / (ratio + 1e-9))
                 print(f'pid: {self.pid}, progress: {round(ratio*100, 1)}% {ind}/{total} images, eta={eta}')
             if not isinstance(record['gender'], float):
-                bad_gender_cnt += 1
+                bad_records['gender'] += 1
+                continue
+            if not isinstance(record['age'], int):
+                bad_records['age'] += 1
+                continue
+            elif not 0 < record['age'] <= 100:
+                bad_records['age'] += 1
                 continue
 
             file_name = record['file_name'][0]
@@ -57,7 +62,7 @@ class Converter:
             if not os.path.exists(save_path):
                 processed_image = self.convert_image(image_path)
                 if processed_image is None:
-                    small_faces_cnt += 1
+                    bad_records['small_faces'] += 1
                     continue
                 else:
                     save_folder_path = os.path.dirname(os.path.abspath(save_path))
@@ -66,7 +71,7 @@ class Converter:
                     cv2.imwrite(save_path, processed_image)
             new_dataset.append({'file_name': file_name, 'gender': int(record['gender']), 'age': record['age']})
         print(f'pid: {self.pid}, total: {total} images, time={now() - start_time}')
-        return new_dataset, bad_gender_cnt, small_faces_cnt
+        return new_dataset, bad_records
 
     def convert_image(self, image_path):
         face_area_threshold = self.config['image']['face_area_threshold']
@@ -111,7 +116,7 @@ class ConverterManager:
     def run(self):
         with open(self.dataset_path) as f:
             dataset_len = len(json.load(f))
-        dataset_len = 1640
+
         with ProcessPoolExecutor(max_workers=self.n_jobs) as executor:
             futures = list()
             subsets = np.linspace(0, dataset_len, self.n_jobs + 1, dtype=np.int)
@@ -122,17 +127,17 @@ class ConverterManager:
                 futures.append(executor.submit(Converter.run_job, self.config, (start, finish), ind))
 
             new_dataset = list()
-            bad_gender_cnt, small_faces_cnt = 0, 0
+            bad_records = {'age': 0, 'gender': 0, 'small_faces': 0}
             for job in as_completed(futures):
                 new_dataset += job.result()[0]
-                bad_gender_cnt += job.result()[1]
-                small_faces_cnt += job.result()[2]
+                bad_records = {k: bad_records[k] + v for k, v in job.result()[1].items()}
 
         with open(os.path.join(self.processed_dataset_path, 'dataset.json'), 'w') as f:
             json.dump(new_dataset, f)
         self._save_dataset_config()
-        print('Records with incorrect gender: ', bad_gender_cnt)
-        print('Records with small faces: ', small_faces_cnt)
+        print('Records with incorrect age: ', bad_records['age'])
+        print('Records with incorrect gender: ', bad_records['gender'])
+        print('Records with small faces: ', bad_records['small_faces'])
         print('Total records transformed %d/%d' % (len(new_dataset), dataset_len))
 
     def _save_dataset_config(self):
