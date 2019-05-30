@@ -21,6 +21,10 @@ train:
     model: inception_resnet_v1 #  варианты: 1) inception_resnet_v1     2) resnet_v2_50
     pretrained_model_folder_or_file: models/pretrained_models # файл модели или папка с файлами для загрузки с диска
     save_frequency: 5  # частота сохранения моделей
+    # от значения train_mode зависит, куда будут сохраняться модели
+    #  1) start - во вновь созданную папку
+    #  2) continue - в папку с предобученной моделью
+    train_mode: start
   learning_rate: 0.001
   weight_decay: 0.00001
   epochs: 1

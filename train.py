@@ -7,23 +7,22 @@ from age_gender.utils.config_parser import get_config
 from age_gender.nets.inception_resnet_v1 import InceptionResnetV1
 from age_gender.nets.resnet_v2_50 import ResNetV2_50
 
+models = {'inception_resnet_v1' : InceptionResnetV1, 'resnet_v2_50': ResNetV2_50}
+
+
 class ModelManager:
     def __init__(self, config):
         # parameters
         self._config = config
+        self.model = models[config['init']['model']]()
+        self.pretrained_model_folder_or_file = config['init']['pretrained_model_folder_or_file']
+        self.num_epochs = config['epochs']
         self.train_size = 0
         self.test_size = 0
         self.batch_size = config['batch_size']
-        self.num_epochs = config['epochs']
-        working_dir = config['working_dir']
         self.save_frequency = config['init']['save_frequency']
-        self.pretrained_model_folder_or_file = os.path.join(working_dir, 'models/pretrained_models')
-        self.experiment_folder = os.path.join(working_dir, 'experiments', datetime.now().strftime("%d-%m-%Y_%H:%M:%S"))
 
         # operations
-        models = {'inception_resnet_v1' : InceptionResnetV1, 'resnet_v2_50': ResNetV2_50}
-        self.model = models[config['init']['model']]()
-        self.pretrained_model_folder_or_file = config['init']['pretrained_model_folder_or_file']
         self.global_step = self.model.global_step
         self.train_mode = tf.placeholder(tf.bool)
         self.init_op = None
@@ -39,7 +38,15 @@ class ModelManager:
         # todo: вынести константы
 
     def train(self):
-        os.makedirs(self.experiment_folder, exist_ok=True)
+        train_mode = self._config['init']['train_mode']
+        if train_mode == 'start':
+            working_dir = config['working_dir']
+            self.experiment_folder = os.path.join(working_dir, 'experiments', datetime.now().strftime("%d-%m-%Y_%H:%M:%S"))
+            os.makedirs(self.experiment_folder, exist_ok=True)
+        elif train_mode == 'continue':
+            self.experiment_folder = \
+                self.pretrained_model_folder_or_file if os.path.isdir(self.pretrained_model_folder_or_file) else \
+                    os.path.dirname(self.pretrained_model_folder_or_file)
         log_dir = os.path.join(self.experiment_folder, 'logs')
         self.create_computational_graph()
         next_data_element, self.train_init_op, self.train_size = self.init_data_loader('train')
@@ -55,47 +62,29 @@ class ModelManager:
             train_writer = tf.summary.FileWriter(log_dir, sess.graph)
             saver = tf.train.Saver(self.variables_to_restore, max_to_keep=100)
             sess.run(tf.global_variables_initializer())
-            # todo: починить reset_global_step
-            sess.run(self.reset_global_step_op)
             if tf.train.checkpoint_exists(self.pretrained_model_folder_or_file):
-                model = tf.train.latest_checkpoint(self.pretrained_model_folder_or_file)
-                model = self.pretrained_model_folder_or_file if not model else model
-                self.load_model(sess, saver, model)
+                model_checkpoint = tf.train.latest_checkpoint(self.pretrained_model_folder_or_file)
+                model_checkpoint = self.pretrained_model_folder_or_file if not model_checkpoint else model_checkpoint
+                self.load_model(sess, saver, model_checkpoint)
             else:
                 print('No pretrained models found')
-            #
-            # if ckpt and tf.train.latest_checkpoint(self.pretrained_model_folder_or_file):
-            #     saver.restore(sess, ckpt.model_checkpoint_path)
-            #     #     print('Pretrained model loaded')
-
-            # ckpt = tf.train.get_checkpoint_state(self.pretrained_model_folder_or_file)
-            # if ckpt and ckpt.model_checkpoint_path:
-            #     saver.restore(sess, ckpt.model_checkpoint_path)
-            #     print('Pretrained model loaded')
-            # ckpt = tf.train.checkpoint_exists('/mnt/Projects/PycharmProjects/age-gender/models/pretrained_models/best_bojyan_model')
-            # ckpt = tf.train.load_checkpoint(self.model.checkpoint_file)
-            # print(ckpt)
-            # sys.exit()
-            # ckpt = tf.train.load_checkpoint(self.model.checkpoint_file) #checkpoint_exists(self.model.checkpoint_file)
-            # if ckpt:
-            #     saver.restore(sess, self.model.checkpoint_file)
             # todo: нужен код продолжения обучения модели, при этом номер эпохи должен начинаться не с 1
-
+            trained_steps = sess.run(self.global_step)
+            trained_epochs = 0 if train_mode == 'start' else self.calculate_trained_epochs(trained_steps, num_batches)
+            print('trained_epochs: ', trained_epochs)
+            sess.run(self.reset_global_step_op)
             start_time = {'train': datetime.now()}
-            fpaths = list()
-            for epoch in range(1, self.num_epochs+1):
+            for epoch in range(1+trained_epochs, 1 + trained_epochs + self.num_epochs):
                 sess.run(self.train_init_op)
                 start_time.update({'train_epoch': datetime.now()})
                 for batch_idx in range(num_batches):
                     train_images, train_age_labels, train_gender_labels, file_paths = sess.run(next_data_element)
-                    fpaths += [fp.decode('utf-8') for fp in file_paths]
                     feed_dict = {self.train_mode: True,
                                  self.images: train_images,  # np.zeros([16, 256, 256, 3])
                                  self.age_labels: train_age_labels,
                                  self.gender_labels: train_gender_labels}
                     _, summary, step = sess.run([self.train_op, self.train_summary, self.global_step],
                                                 feed_dict=feed_dict)
-                    print(f'step: {step}')
                     train_writer.add_summary(summary, step)
 
                 t = time_spent(start_time['train_epoch'])
@@ -122,6 +111,9 @@ class ModelManager:
             save_path = saver.save(sess, os.path.join(self.experiment_folder, "model.ckpt"), global_step=epoch)
             self.save_hyperparameters(start_time)
             print("Model saved in file: %s" % save_path)
+
+    def calculate_trained_epochs(self, trained_steps,  num_batches):
+        return (trained_steps - self.model.trained_steps) // num_batches
 
     def save_hyperparameters(self, start_time):
         self._config['duration'] = time_spent(start_time['train'])
@@ -189,9 +181,10 @@ class ModelManager:
                 summaries.append(tf.summary.histogram(var.name, var))
         return tf.summary.merge(summaries)
 
-    def load_model(self, sess, saver, model):
-        saver.restore(sess, model)
+    def load_model(self, sess, saver, model_checkpoint):
+        saver.restore(sess, model_checkpoint)
         print('Pretrained model loaded')
+
 
 def time_spent(start):
     sec = int((datetime.now() - start).total_seconds())
