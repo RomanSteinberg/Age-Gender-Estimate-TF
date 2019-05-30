@@ -18,15 +18,15 @@ train:
   init:
     train_dataset_path: data/imdb_wiki/train.json  # путь к json-файлу с описанием датасета для обучения
     test_dataset_path: data/imdb_wiki/test.json  # путь к json-файлу с описанием датасета для валидации во время обучения
-    model:   # имя модели для загрузки с диска
+    model: inception_resnet_v1 #  варианты: 1) inception_resnet_v1     2) resnet_v2_50
+    pretrained_model_folder_or_file: models/pretrained_models # файл модели или папка с файлами для загрузки с диска
     save_frequency: 5  # частота сохранения моделей
-  learning_rate: 1e-3
-  weight_decay: 1e-5
+  learning_rate: 0.001
+  weight_decay: 0.00001
   epochs: 1
   batch_size: 16  # 30 максимум для GeForce 1060
   keep_prob: 0.8
   cuda: True
-
 
 
 
