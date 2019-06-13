@@ -21,17 +21,17 @@ def get_area(rect):
 
 class Converter:
 
-    def __init__(self, config, slice_limits, pid):
+    def __init__(self, config):
         self.config = config
-        self.slice = slice_limits
-        self.pid = pid
         self.dataset_path = config['general']['dataset_path']
         self.shape_predictor = 'shape_predictor_68_face_landmarks.dat'
         self.detector = dlib.get_frontal_face_detector()
         self.predictor = dlib.shape_predictor(self.shape_predictor)
         self.face_aligner = FaceAligner(config['image'], self.predictor)
 
-    def convert_dataset(self):
+    def convert_dataset(self, slice_limits, pid):
+        self.slice = slice_limits
+        self.pid = pid
         dataset_folder = os.path.dirname(self.dataset_path)
         processed_dataset_path = self.config['general']['processed_dataset_path']
         with open(self.dataset_path) as f:
@@ -46,7 +46,7 @@ class Converter:
                 ratio = ind / total
                 eta = timedelta(seconds=(now() - start_time) * (1 - ratio) / (ratio + 1e-9))
                 print(f'pid: {self.pid}, progress: {round(ratio*100, 1)}% {ind}/{total} images, eta={eta}')
-            if not isinstance(record['gender'], float):
+            if not (isinstance(record['gender'], float) and isinstance(record['gender'], int)):
                 bad_records['gender'] += 1
                 continue
             if not isinstance(record['age'], int):
@@ -102,8 +102,8 @@ class Converter:
 
     @staticmethod
     def run_job(config, slice_limits, pid):
-        converter = Converter(config, slice_limits, pid)
-        return converter.convert_dataset()
+        converter = Converter(config)
+        return converter.convert_dataset(slice_limits, pid)
 
 
 class ConverterManager:

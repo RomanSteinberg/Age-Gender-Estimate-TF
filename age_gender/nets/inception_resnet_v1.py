@@ -21,7 +21,7 @@ class InceptionResnetV1(AbstractNet):
         self.dropout_keep_prob = dropout_keep_prob
         self.is_training = is_training
         self.trained_steps = 14001
-
+        self.vars = None
         self.batch_norm_params = {
             # Decay for the moving averages.
             'decay': 0.995,
@@ -88,6 +88,7 @@ class InceptionResnetV1(AbstractNet):
                         net = slim.flatten(net)
                         net = slim.dropout(net, self.dropout_keep_prob, is_training=self.is_training,
                                            scope='Dropout')
+                    self.var = variables_to_restore = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='Bottleneck')
                     net = slim.fully_connected(net, self.bottleneck_layer_size, activation_fn=None,
                                                scope='Bottleneck', reuse=False)
         return net
@@ -106,7 +107,6 @@ class InceptionResnetV1(AbstractNet):
 
     def inference(self, images):
         self.images = images
-        variables_to_restore = [var for var in slim.get_variables_to_restore()]  # slim.get_variables_to_restore()
         with slim.arg_scope([slim.conv2d, slim.fully_connected],
                             weights_initializer=tf.truncated_normal_initializer(stddev=0.1),
                             weights_regularizer=slim.l2_regularizer(self.weight_decay),
@@ -115,5 +115,6 @@ class InceptionResnetV1(AbstractNet):
             net = self.build_model()
         age_logits = self.get_age_logits(net)
         gender_logits = self.get_gender_logits(net)
+        variables_to_restore = slim.get_model_variables()
         return variables_to_restore, age_logits, gender_logits
 
