@@ -12,7 +12,6 @@ from age_gender.utils.model_saver import ModelSaver
 from age_gender.utils.dataset_json_loader import DatasetJsonLoader
 models = {'inception_resnet_v1' : InceptionResnetV1, 'resnet_v2_50': ResNetV2_50}
 
-
 class ModelManager:
     def __init__(self, config):
         # parameters
@@ -44,6 +43,7 @@ class ModelManager:
         # todo: вынести константы
 
     def train(self):
+        os.makedirs(self.experiment_folder, exist_ok=True)
         log_dir = os.path.join(self.experiment_folder, 'logs')
         self.create_computational_graph()
         next_data_element, self.train_init_op, self.train_size = self.init_data_loader('train')
@@ -57,33 +57,22 @@ class ModelManager:
             tf.random.set_random_seed(100)
             sess.run(self.init_op)
             train_writer = tf.summary.FileWriter(log_dir, sess.graph)
+            sess.run(tf.global_variables_initializer())
             saver = ModelSaver(var_list=self.variables_to_restore, max_to_keep=100)
             saver.restore_model(sess, self.pretrained_model_folder_or_file)
-            # saver = tf.train.Saver()
-            # ckpt = tf.train.get_checkpoint_state(self.pretrained_model_folder_or_file)
-            # if ckpt and ckpt.model_checkpoint_path:
-            #     saver.restore(sess, ckpt.model_checkpoint_path)
-            #     print("restore model!")
-            # else:
-            #     pass
-            sess.run(tf.global_variables_initializer())
-            # todo: нужен код продолжения обучения модели, при этом номер эпохи должен начинаться не с 1
             trained_steps = sess.run(self.global_step)
             print('trained_steps', trained_steps)
-            # if self.mode == 'start':
-            #     #sess.run(self.reset_global_step_op)
-            #     trained_epochs = 0
-            # else:
-            #     trained_epochs = self.calculate_trained_epochs(trained_steps, num_batches)
-            trained_epochs = 0
-            print('trained_epochs: ', trained_epochs)
-            # exit(0)
+            trained_epochs = self.calculate_trained_epochs(trained_steps, num_batches)
+            print('trained_epochs', trained_epochs)
+            #exit(0)
             start_time = {'train': datetime.now()}
+            fpaths = list()
             for epoch in range(1+trained_epochs, 1 + trained_epochs + self.num_epochs):
                 sess.run(self.train_init_op)
                 start_time.update({'train_epoch': datetime.now()})
                 for batch_idx in range(num_batches):
                     train_images, train_age_labels, train_gender_labels, file_paths = sess.run(next_data_element)
+                    fpaths += [fp.decode('utf-8') for fp in file_paths]
                     feed_dict = {self.train_mode: True,
                                  self.images: train_images,  # np.zeros([16, 256, 256, 3])
                                  self.age_labels: train_age_labels,
@@ -108,10 +97,12 @@ class ModelManager:
                         train_writer.add_summary(summary, step - num_batches + batch_idx)
                     t = time_spent(start_time['test_epoch'])
                     print(f'Test epoch {epoch} takes {t}')
+                    save_path = saver.save(sess, os.path.join(self.experiment_folder, "model.ckpt"), global_step=epoch)
                     self.save_hyperparameters(start_time)
-                    saver.save_model(sess, epoch, self.experiment_folder)
-            self.save_hyperparameters(start_time)
+                    print("Model saved in file: %s" % save_path)
+
             saver.save_model(sess, epoch, self.experiment_folder)
+            self.save_hyperparameters(start_time)
 
     def get_experiment_folder(self, mode):
         if mode == 'start':
@@ -126,15 +117,15 @@ class ModelManager:
             experiment_folder = 'experiments'
         return experiment_folder
 
+    def calculate_trained_epochs(self, trained_steps,  num_batches):
+        # return (trained_steps) // num_batches
+        return (trained_steps - self.model.trained_steps) // num_batches
+
     def save_hyperparameters(self, start_time):
         self._config['duration'] = time_spent(start_time['train'])
         json_parameters_path = os.path.join(self.experiment_folder, "hyperparams.yaml")
         with open(json_parameters_path, 'w') as file:
             yaml.dump(config, file, default_flow_style=False)
-
-    def calculate_trained_epochs(self, trained_steps,  num_batches):
-        return (trained_steps) // num_batches
-        #return (trained_steps - self.model.trained_steps) // num_batches
 
     def create_computational_graph(self):
         start_lr = self._config['learning_rate']
@@ -149,12 +140,12 @@ class ModelManager:
         # l2 regularization
         total_loss = tf.add_n(
             [gender_cross_entropy_mean, age_cross_entropy_mean] + tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES))
-        age_ = tf.cast(tf.constant([i for i in range(0, self.model.age_num_classes)]), tf.float32)
+        age_ = tf.cast(tf.constant([i for i in range(0, 101)]), tf.float32)
         age = tf.reduce_sum(tf.multiply(tf.nn.softmax(age_logits), age_), axis=1)
         abs_loss = tf.losses.absolute_difference(self.age_labels, age)
         gender_acc = tf.reduce_mean(tf.cast(tf.nn.in_top_k(gender_logits, self.gender_labels, 1), tf.float32))
 
-        #self.reset_global_step_op = tf.assign(self.global_step, 0)
+        self.reset_global_step_op = tf.assign(self.global_step, 0)
         lr = tf.train.exponential_decay(start_lr, global_step=self.global_step, decay_steps=3000, decay_rate=0.9, staircase=True)
 
         metrics_and_errors = [abs_loss, age_cross_entropy_mean, gender_acc, gender_cross_entropy_mean, total_loss]
@@ -201,7 +192,6 @@ class ModelManager:
             for var in bottleneck:
                 summaries.append(tf.summary.histogram(var.name, var))
         return tf.summary.merge(summaries)
-
 
 def time_spent(start):
     sec = int((datetime.now() - start).total_seconds())

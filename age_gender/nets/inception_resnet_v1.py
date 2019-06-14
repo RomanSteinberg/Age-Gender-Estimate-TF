@@ -115,6 +115,7 @@ class InceptionResnetV1(AbstractNet):
             net = self.build_model()
         age_logits = self.get_age_logits(net)
         gender_logits = self.get_gender_logits(net)
-        variables_to_restore = slim.get_model_variables()
-        return variables_to_restore, age_logits, gender_logits
+        # todo: написать код для корректной загрузки переменных
+        #  ( например: variables_to_restore = slim.get_model_variables())
+        return None, age_logits, gender_logits
 
