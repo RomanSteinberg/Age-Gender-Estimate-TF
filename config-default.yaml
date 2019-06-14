@@ -18,6 +18,10 @@ train:
   init:
     train_dataset_path: data/imdb_wiki/train.json  # путь к json-файлу с описанием датасета для обучения
     test_dataset_path: data/imdb_wiki/test.json  # путь к json-файлу с описанием датасета для валидации во время обучения
+    balance_dataset: False
+    dataset_json_loader:
+      ages: [20, 40 ,100]
+      weights: [1, 1, 1]
     model: inception_resnet_v1 #  варианты: 1) inception_resnet_v1     2) resnet_v2_50
     pretrained_model_folder_or_file: models/pretrained_models # файл модели или папка с файлами для загрузки с диска
     save_frequency: 5  # частота сохранения моделей

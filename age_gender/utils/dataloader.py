@@ -10,14 +10,14 @@ from convert_to_records_multiCPU import get_area, align_face
 
 
 class DataLoader:
-    def __init__(self, data_description_path):
+    def __init__(self, dataset_json, data_folder):
         """
         Args:
             data_description_path (string): json description file path.
         """
         self.image_shape = [256, 256, 3]
-        self.data_folder = os.path.dirname(data_description_path)
-        self.description = json.load(open(data_description_path, 'r'))
+        self.data_folder = data_folder
+        self.description = dataset_json
 
     def _parse_function(self, sample):
         """

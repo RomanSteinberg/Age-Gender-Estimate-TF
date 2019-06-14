@@ -1,5 +1,7 @@
 import os
 import yaml
+import json
+from pathlib import Path
 import tensorflow as tf
 from datetime import datetime, timedelta
 from age_gender.utils.dataloader import DataLoader
@@ -7,7 +9,7 @@ from age_gender.utils.config_parser import get_config
 from age_gender.nets.inception_resnet_v1 import InceptionResnetV1
 from age_gender.nets.resnet_v2_50 import ResNetV2_50
 from age_gender.utils.model_saver import ModelSaver
-
+from age_gender.utils.dataset_json_loader import DatasetJsonLoader
 models = {'inception_resnet_v1' : InceptionResnetV1, 'resnet_v2_50': ResNetV2_50}
 
 
@@ -57,11 +59,25 @@ class ModelManager:
             train_writer = tf.summary.FileWriter(log_dir, sess.graph)
             saver = ModelSaver(var_list=self.variables_to_restore, max_to_keep=100)
             saver.restore_model(sess, self.pretrained_model_folder_or_file)
+            # saver = tf.train.Saver()
+            # ckpt = tf.train.get_checkpoint_state(self.pretrained_model_folder_or_file)
+            # if ckpt and ckpt.model_checkpoint_path:
+            #     saver.restore(sess, ckpt.model_checkpoint_path)
+            #     print("restore model!")
+            # else:
+            #     pass
             sess.run(tf.global_variables_initializer())
             # todo: нужен код продолжения обучения модели, при этом номер эпохи должен начинаться не с 1
             trained_steps = sess.run(self.global_step)
-            trained_epochs = 0 if self.mode == 'start' else self.calculate_trained_epochs(trained_steps, num_batches)
+            print('trained_steps', trained_steps)
+            # if self.mode == 'start':
+            #     #sess.run(self.reset_global_step_op)
+            #     trained_epochs = 0
+            # else:
+            #     trained_epochs = self.calculate_trained_epochs(trained_steps, num_batches)
+            trained_epochs = 0
             print('trained_epochs: ', trained_epochs)
+            # exit(0)
             start_time = {'train': datetime.now()}
             for epoch in range(1+trained_epochs, 1 + trained_epochs + self.num_epochs):
                 sess.run(self.train_init_op)
@@ -117,7 +133,8 @@ class ModelManager:
             yaml.dump(config, file, default_flow_style=False)
 
     def calculate_trained_epochs(self, trained_steps,  num_batches):
-        return (trained_steps - self.model.trained_steps) // num_batches
+        return (trained_steps) // num_batches
+        #return (trained_steps - self.model.trained_steps) // num_batches
 
     def create_computational_graph(self):
         start_lr = self._config['learning_rate']
@@ -137,6 +154,7 @@ class ModelManager:
         abs_loss = tf.losses.absolute_difference(self.age_labels, age)
         gender_acc = tf.reduce_mean(tf.cast(tf.nn.in_top_k(gender_logits, self.gender_labels, 1), tf.float32))
 
+        #self.reset_global_step_op = tf.assign(self.global_step, 0)
         lr = tf.train.exponential_decay(start_lr, global_step=self.global_step, decay_steps=3000, decay_rate=0.9, staircase=True)
 
         metrics_and_errors = [abs_loss, age_cross_entropy_mean, gender_acc, gender_cross_entropy_mean, total_loss]
@@ -152,7 +170,13 @@ class ModelManager:
 
     def init_data_loader(self, mode):
         dataset_path = self._config['init'][f'{mode}_dataset_path']
-        loader = DataLoader(dataset_path)
+        dataset_json_config = self._config['init']['dataset_json_loader']
+        dataset_json = json.load(Path(dataset_path).open())
+        if self._config['init']['balance_dataset']:
+            dataset_json_loader = DatasetJsonLoader(dataset_json_config, dataset_json)
+            dataset_json = dataset_json_loader.get_dataset()
+        data_folder = os.path.dirname(dataset_path)
+        loader = DataLoader(dataset_json, data_folder)
         dataset = loader.create_dataset(perform_shuffle=True, batch_size=self.batch_size)
 
         iterator = tf.data.Iterator.from_structure(dataset.output_types, dataset.output_shapes)
