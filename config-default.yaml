@@ -49,6 +49,13 @@ train:
   cuda: True
   face_area_threshold: 2500
 
-
+mining:
+  dataset_path: data/imdb_wiki/dataset.json
+  model: inception_resnet_v1
+  pretrained_model_folder_or_file: models/pretrained_models
+  cuda: True
+  negative_size: 1000
+  positive_size: 1000
+  results_path: experiments/mining/
 
 
