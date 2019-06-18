@@ -30,9 +30,9 @@ class DatasetJsonLoader:
         return res
 
     @staticmethod
-    def get_weights(dataset, ages):
+    def get_weights(dataset, ages, target):
         weights = list()
-        target_dataset = DatasetJsonLoader.get_age_class(30, 40, dataset)
+        target_dataset = DatasetJsonLoader.get_age_class(target[0], target[1], dataset)
         for ind, max_age in enumerate(ages):
             min_age = 0 if ind == 0 else ages[ind - 1]
             age_dataset = DatasetJsonLoader.get_age_class(min_age, max_age, dataset)

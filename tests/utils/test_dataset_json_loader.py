@@ -22,8 +22,7 @@ class DatasetJsonLoaderTestCase(unittest.TestCase):
     def setUp(self):
         ages = [20, 30, 40, 60, 100]
         self.init_dataset = generate_dataset_json(ages)
-        weights = DatasetJsonLoader.get_weights(self.init_dataset, ages)
-        print('init weights', weights)
+        weights = DatasetJsonLoader.get_weights(self.init_dataset, ages, (30, 40))
         self.config = {'ages': ages, 'weights': weights}
         self.dataset_json_loader = DatasetJsonLoader(self.config, self.init_dataset)
         self.balanced_dataset = self.dataset_json_loader.get_dataset()
@@ -34,7 +33,6 @@ class DatasetJsonLoaderTestCase(unittest.TestCase):
         self.assertTrue(files == balanced_files)
 
     def test_balance(self):
-        weigts = DatasetJsonLoader.get_weights(self.balanced_dataset, self.config['ages'])
-        print(weigts)
+        weigts = DatasetJsonLoader.get_weights(self.balanced_dataset, self.config['ages'], (30,40))
         for weigt in  weigts:
             self.assertTrue(abs(1 - weigt)< 0.1)

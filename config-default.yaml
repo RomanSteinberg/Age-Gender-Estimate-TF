@@ -18,23 +18,36 @@ train:
   init:
     train_dataset_path: data/imdb_wiki/train.json  # путь к json-файлу с описанием датасета для обучения
     test_dataset_path: data/imdb_wiki/test.json  # путь к json-файлу с описанием датасета для валидации во время обучения
-    balance_dataset: False
+    balance_dataset: True
     dataset_json_loader:
-      ages: [20, 40 ,100]
-      weights: [1, 1, 1]
+      ages: [20, 50 ,100]
+      weights: [13.67, 1, 4.22]
     model: inception_resnet_v1 #  варианты: 1) inception_resnet_v1     2) resnet_v2_50
     pretrained_model_folder_or_file: models/pretrained_models # файл модели или папка с файлами для загрузки с диска
     save_frequency: 5  # частота сохранения моделей
     # от значения train_mode зависит, куда будут сохраняться модели
     #  1) start - во вновь созданную папку
     #  2) continue - в папку с предобученной моделью
-    train_mode: start
-  learning_rate: 0.001
+    mode: start
+    learning_rate:
+      method: exponential
+      exponential:
+        learning_rate: 0.001
+        decay_steps: 3000
+        decay_rate: 0.9
+        staircase: True
+      cyclic:
+        learning_rate: 0.001
+        max_lr: 0.1
+        step_size: 20
+        gamma: 0.99994
+        mode: exp_range
   weight_decay: 0.00001
-  epochs: 1
+  epochs: 50
   batch_size: 16  # 30 максимум для GeForce 1060
   keep_prob: 0.8
   cuda: True
+  face_area_threshold: 2500
 
 
 

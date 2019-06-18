@@ -10,12 +10,15 @@ from age_gender.nets.inception_resnet_v1 import InceptionResnetV1
 from age_gender.nets.resnet_v2_50 import ResNetV2_50
 from age_gender.utils.model_saver import ModelSaver
 from age_gender.utils.dataset_json_loader import DatasetJsonLoader
+from age_gender.nets.learning_rate_manager import LearningRateManager
+
 models = {'inception_resnet_v1' : InceptionResnetV1, 'resnet_v2_50': ResNetV2_50}
 
 class ModelManager:
     def __init__(self, config):
         # parameters
         self._config = config
+        self.learning_rate_manager = LearningRateManager(self._config['init']['learning_rate'])
         self.model = models[config['init']['model']]()
         self.pretrained_model_folder_or_file = config['init']['pretrained_model_folder_or_file']
         self.num_epochs = config['epochs']
@@ -128,7 +131,6 @@ class ModelManager:
             yaml.dump(config, file, default_flow_style=False)
 
     def create_computational_graph(self):
-        start_lr = self._config['learning_rate']
         self.variables_to_restore, age_logits, gender_logits = self.model.inference(self.images)
         # head
         age_cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.age_labels, logits=age_logits)
@@ -146,7 +148,8 @@ class ModelManager:
         gender_acc = tf.reduce_mean(tf.cast(tf.nn.in_top_k(gender_logits, self.gender_labels, 1), tf.float32))
 
         self.reset_global_step_op = tf.assign(self.global_step, 0)
-        lr = tf.train.exponential_decay(start_lr, global_step=self.global_step, decay_steps=3000, decay_rate=0.9, staircase=True)
+
+        lr = self.learning_rate_manager.get_learning_rate(self.global_step)
 
         metrics_and_errors = [abs_loss, age_cross_entropy_mean, gender_acc, gender_cross_entropy_mean, total_loss]
         self.train_summary = self.define_summaries(metrics_and_errors, lr, 'train')
