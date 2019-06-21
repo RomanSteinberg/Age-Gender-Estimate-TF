@@ -26,7 +26,6 @@ class ModelManager:
         self.test_size = 0
         self.batch_size = config['batch_size']
         self.save_frequency = config['init']['save_frequency']
-
         self.mode = config['init']['mode']
         self.experiment_folder = self.get_experiment_folder(self.mode)
 
@@ -51,10 +50,12 @@ class ModelManager:
         self.create_computational_graph()
         next_data_element, self.train_init_op, self.train_size = self.init_data_loader('train')
         next_test_data, self.test_init_op, self.test_size = self.init_data_loader('test')
+        self.validation_frequency = self.test_size // self.batch_size
 
         num_batches = (self.train_size + 1) // self.batch_size
         print(f'Train size: {self.train_size}, test size: {self.test_size}')
         print(f'Epochs in train: {self.num_epochs}, batches in epoch: {num_batches}')
+        print(f'Validation frequency {self.validation_frequency}')
 
         with tf.Graph().as_default() and tf.Session() as sess:
             tf.random.set_random_seed(100)
@@ -67,27 +68,30 @@ class ModelManager:
             print('trained_steps', trained_steps)
             trained_epochs = self.calculate_trained_epochs(trained_steps, num_batches)
             print('trained_epochs', trained_epochs)
-            #exit(0)
             start_time = {'train': datetime.now()}
+            self.save_hyperparameters(start_time)
             fpaths = list()
-            for epoch in range(1+trained_epochs, 1 + trained_epochs + self.num_epochs):
+            for epoch in range((1+trained_epochs)*num_batches, (1+trained_epochs+self.num_epochs)*num_batches):
                 sess.run(self.train_init_op)
-                start_time.update({'train_epoch': datetime.now()})
-                for batch_idx in range(num_batches):
-                    train_images, train_age_labels, train_gender_labels, file_paths = sess.run(next_data_element)
-                    fpaths += [fp.decode('utf-8') for fp in file_paths]
-                    feed_dict = {self.train_mode: True,
-                                 self.images: train_images,  # np.zeros([16, 256, 256, 3])
-                                 self.age_labels: train_age_labels,
-                                 self.gender_labels: train_gender_labels}
-                    _, summary, step = sess.run([self.train_op, self.train_summary, self.global_step],
-                                                feed_dict=feed_dict)
-                    train_writer.add_summary(summary, step)
+                # start_time.update({'train_epoch': datetime.now()})
+                train_images, train_age_labels, train_gender_labels, file_paths = sess.run(next_data_element)
+                fpaths += [fp.decode('utf-8') for fp in file_paths]
+                feed_dict = {self.train_mode: True,
+                             self.images: train_images,  # np.zeros([16, 256, 256, 3])
+                             self.age_labels: train_age_labels,
+                             self.gender_labels: train_gender_labels}
+                _, summary, step = sess.run([self.train_op, self.train_summary, self.global_step],
+                                            feed_dict=feed_dict)
+                print('step: ', step)
+                print('step - trained_steps: ', (step - trained_steps))
+                train_writer.add_summary(summary, step)
 
-                t = time_spent(start_time['train_epoch'])
-                print(f'Train epoch {epoch} takes {t}')
+                # t = time_spent(start_time['train_epoch'])
+                # print(f'Train epoch {epoch} takes {t}')
 
-                if epoch % self.save_frequency == 0 or epoch == 1:
+                if (step - trained_steps) % self.validation_frequency == 0:
+                    print('is time for testing:', (step - trained_steps) % self.validation_frequency == 0)
+
                     start_time.update({'test_epoch': datetime.now()})
                     sess.run([self.test_init_op])
                     for batch_idx in range((self.test_size + 1) // self.batch_size):
@@ -105,11 +109,10 @@ class ModelManager:
                     print("Model saved in file: %s" % save_path)
 
             saver.save_model(sess, epoch, self.experiment_folder)
-            self.save_hyperparameters(start_time)
 
     def get_experiment_folder(self, mode):
         if mode == 'start':
-            working_dir = config['working_dir']
+            working_dir = self._config['working_dir']
             experiment_folder = os.path.join(working_dir, 'experiments', datetime.now().strftime("%d-%m-%Y_%H:%M:%S"))
             os.makedirs(experiment_folder, exist_ok=True)
         elif mode == 'continue':
@@ -126,9 +129,10 @@ class ModelManager:
 
     def save_hyperparameters(self, start_time):
         self._config['duration'] = time_spent(start_time['train'])
+        self._config['date'] = datetime.now().strftime("%d-%m-%Y_%H:%M:%S")
         json_parameters_path = os.path.join(self.experiment_folder, "hyperparams.yaml")
         with open(json_parameters_path, 'w') as file:
-            yaml.dump(config, file, default_flow_style=False)
+            yaml.dump(self._config, file, default_flow_style=False)
 
     def create_computational_graph(self):
         self.variables_to_restore, age_logits, gender_logits = self.model.inference(self.images)
