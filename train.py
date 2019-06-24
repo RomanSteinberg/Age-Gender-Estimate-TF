@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import tensorflow as tf
 from datetime import datetime, timedelta
+
 from age_gender.utils.dataloader import DataLoader
 from age_gender.utils.config_parser import get_config
 from age_gender.nets.inception_resnet_v1 import InceptionResnetV1
@@ -14,19 +15,21 @@ from age_gender.nets.learning_rate_manager import LearningRateManager
 
 models = {'inception_resnet_v1' : InceptionResnetV1, 'resnet_v2_50': ResNetV2_50}
 
+
 class ModelManager:
     def __init__(self, config):
         # parameters
         self._config = config
         self.learning_rate_manager = LearningRateManager(self._config['init']['learning_rate'])
         self.model = models[config['init']['model']]()
-        self.pretrained_model_folder_or_file = config['init']['pretrained_model_folder_or_file']
         self.num_epochs = config['epochs']
         self.train_size = 0
-        self.test_size = 0
+        self.test_size = None
+        self.validation_frequency = None
         self.batch_size = config['batch_size']
         self.save_frequency = config['init']['save_frequency']
         self.mode = config['init']['mode']
+        self.pretrained_model_folder_or_file = config['init']['pretrained_model_folder_or_file']
         self.experiment_folder = self.get_experiment_folder(self.mode)
 
         # operations
@@ -62,19 +65,22 @@ class ModelManager:
             sess.run(self.init_op)
             train_writer = tf.summary.FileWriter(log_dir, sess.graph)
             sess.run(tf.global_variables_initializer())
-            saver = ModelSaver(var_list=self.variables_to_restore, max_to_keep=100)
+
+            saver = ModelSaver(self, var_list=self.variables_to_restore, max_to_keep=100)
             saver.restore_model(sess, self.pretrained_model_folder_or_file)
             trained_steps = sess.run(self.global_step)
             print('trained_steps', trained_steps)
             trained_epochs = self.calculate_trained_epochs(trained_steps, num_batches)
             print('trained_epochs', trained_epochs)
+
             start_time = {'train': datetime.now()}
-            self.save_hyperparameters(start_time)
+            saver.save_hyperparameters(self.experiment_folder, time_spent(start_time['train']), self._config)
             fpaths = list()
             if self.mode == 'start':
                 sess.run(self.reset_global_step_op)
                 trained_steps = 0 
-                print('global_step turned to zero')
+                print('global_step reset to zero')
+
             for epoch in range((1+trained_epochs)*num_batches, (1+trained_epochs+self.num_epochs)*num_batches):
                 sess.run(self.train_init_op)
                 # start_time.update({'train_epoch': datetime.now()})
@@ -105,7 +111,6 @@ class ModelManager:
                     t = time_spent(start_time['test_epoch'])
                     print(f'Test epoch {epoch} takes {t}')
                     save_path = saver.save(sess, os.path.join(self.experiment_folder, "model.ckpt"), global_step=epoch)
-                    self.save_hyperparameters(start_time)
                     print("Model saved in file: %s" % save_path)
 
             saver.save_model(sess, epoch, self.experiment_folder)
@@ -116,9 +121,11 @@ class ModelManager:
             experiment_folder = os.path.join(working_dir, 'experiments', datetime.now().strftime("%d-%m-%Y_%H:%M:%S"))
             os.makedirs(experiment_folder, exist_ok=True)
         elif mode == 'continue':
-            experiment_folder = \
-                self.pretrained_model_folder_or_file if os.path.isdir(self.pretrained_model_folder_or_file) else \
-                    os.path.dirname(self.pretrained_model_folder_or_file)
+            path = self.pretrained_model_folder_or_file
+            experiment_folder = path if os.path.isdir(path) else os.path.dirname(path)
+        elif mode == 'test':
+            # todo: implement
+            raise NotImplementedError('test mode is not implemented yet!')
         else:
             experiment_folder = 'experiments'
         return experiment_folder
@@ -126,13 +133,6 @@ class ModelManager:
     def calculate_trained_epochs(self, trained_steps,  num_batches):
         # return (trained_steps) // num_batches
         return (trained_steps - self.model.trained_steps) // num_batches
-
-    def save_hyperparameters(self, start_time):
-        self._config['duration'] = time_spent(start_time['train'])
-        self._config['date'] = datetime.now().strftime("%d-%m-%Y_%H:%M:%S")
-        json_parameters_path = os.path.join(self.experiment_folder, "hyperparams.yaml")
-        with open(json_parameters_path, 'w') as file:
-            yaml.dump(self._config, file, default_flow_style=False)
 
     def create_computational_graph(self):
         self.variables_to_restore, age_logits, gender_logits = self.model.inference(self.images)
@@ -199,6 +199,7 @@ class ModelManager:
             for var in bottleneck:
                 summaries.append(tf.summary.histogram(var.name, var))
         return tf.summary.merge(summaries)
+
 
 def time_spent(start):
     sec = int((datetime.now() - start).total_seconds())

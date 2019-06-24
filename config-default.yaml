@@ -11,6 +11,8 @@ prepare:
     n_jobs: 8
   image:
     size: 256
+    height_scale: 1.7
+    width_scale: 1.2
     face_score_threshold: 0.75
     face_area_threshold: 2500
 
@@ -28,6 +30,7 @@ train:
     # от значения train_mode зависит, куда будут сохраняться модели
     #  1) start - во вновь созданную папку
     #  2) continue - в папку с предобученной моделью
+    #  3) test - запустить анализ результатов для обученной модели pretrained_model_folder_or_file
     mode: start
     learning_rate:
       method: exponential
