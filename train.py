@@ -71,6 +71,10 @@ class ModelManager:
             start_time = {'train': datetime.now()}
             self.save_hyperparameters(start_time)
             fpaths = list()
+            if self.mode == 'start':
+                sess.run(self.reset_global_step_op)
+                trained_steps = 0 
+                print('global_step turned to zero')
             for epoch in range((1+trained_epochs)*num_batches, (1+trained_epochs+self.num_epochs)*num_batches):
                 sess.run(self.train_init_op)
                 # start_time.update({'train_epoch': datetime.now()})
@@ -82,16 +86,12 @@ class ModelManager:
                              self.gender_labels: train_gender_labels}
                 _, summary, step = sess.run([self.train_op, self.train_summary, self.global_step],
                                             feed_dict=feed_dict)
-                print('step: ', step)
-                print('step - trained_steps: ', (step - trained_steps))
                 train_writer.add_summary(summary, step)
 
                 # t = time_spent(start_time['train_epoch'])
                 # print(f'Train epoch {epoch} takes {t}')
 
                 if (step - trained_steps) % self.validation_frequency == 0:
-                    print('is time for testing:', (step - trained_steps) % self.validation_frequency == 0)
-
                     start_time.update({'test_epoch': datetime.now()})
                     sess.run([self.test_init_op])
                     for batch_idx in range((self.test_size + 1) // self.batch_size):
