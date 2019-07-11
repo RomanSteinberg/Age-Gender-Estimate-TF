@@ -7,9 +7,10 @@ import tensorflow.contrib.slim as slim
 from age_gender.nets.inception_resnet_v1_blocks import block35, reduction_a, block17, reduction_b, block8
 from age_gender.nets.abstract_net import AbstractNet
 
+
 class InceptionResnetV1(AbstractNet):
-    def __init__(self, keep_probability=0.8, phase_train=True, bottleneck_layer_size=128, weight_decay=0.0, reuse=None,
-                 dropout_keep_prob=0.8, is_training=True):
+    def __init__(self, keep_probability=0.8, phase_train=True, bottleneck_layer_size=128, reuse=None,
+                 dropout_keep_prob=0.8, is_training=True, weight_decay=0.01, age_regulizer=0.01, gender_regulizer=0.01):
         super().__init__()
         self.global_step = tf.Variable(0, name='global_step', trainable=True)
         self.bottleneck_scope = 'InceptionResnetV1/Bottleneck'
@@ -17,6 +18,8 @@ class InceptionResnetV1(AbstractNet):
         self.phase_train = phase_train
         self.bottleneck_layer_size = bottleneck_layer_size
         self.weight_decay = weight_decay
+        self.age_regulizer = age_regulizer
+        self.gender_regulizer = gender_regulizer
         self.reuse = reuse
         self.dropout_keep_prob = dropout_keep_prob
         self.is_training = is_training
@@ -88,28 +91,35 @@ class InceptionResnetV1(AbstractNet):
                         net = slim.flatten(net)
                         net = slim.dropout(net, self.dropout_keep_prob, is_training=self.is_training,
                                            scope='Dropout')
-                    self.var = variables_to_restore = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='Bottleneck')
+                    self.var = variables_to_restore = tf.get_collection(
+                        tf.GraphKeys.GLOBAL_VARIABLES, scope='Bottleneck')
                     net = slim.fully_connected(net, self.bottleneck_layer_size, activation_fn=None,
                                                scope='Bottleneck', reuse=False)
         return net
 
     def get_age_logits(self, net):
         return slim.fully_connected(net, self.age_num_classes, activation_fn=None,
-                                    weights_initializer=tf.truncated_normal_initializer(stddev=0.01),
-                                    weights_regularizer=slim.l2_regularizer(1e-5),
+                                    weights_initializer=tf.truncated_normal_initializer(
+                                        stddev=0.01),
+                                    weights_regularizer=slim.l2_regularizer(
+                                        self.age_regulizer),
                                     scope='logits/age', reuse=False)
 
     def get_gender_logits(self, net):
         return slim.fully_connected(net, self.gender_num_classes, activation_fn=None,
-                                    weights_initializer=tf.truncated_normal_initializer(stddev=0.01),
-                                    weights_regularizer=slim.l2_regularizer(1e-5),
+                                    weights_initializer=tf.truncated_normal_initializer(
+                                        stddev=0.01),
+                                    weights_regularizer=slim.l2_regularizer(
+                                        self.gender_regulizer),
                                     scope='logits/gender', reuse=False)
 
     def inference(self, images):
         self.images = images
         with slim.arg_scope([slim.conv2d, slim.fully_connected],
-                            weights_initializer=tf.truncated_normal_initializer(stddev=0.1),
-                            weights_regularizer=slim.l2_regularizer(self.weight_decay),
+                            weights_initializer=tf.truncated_normal_initializer(
+                                stddev=0.1),
+                            weights_regularizer=slim.l2_regularizer(
+                                self.weight_decay),
                             normalizer_fn=slim.batch_norm,
                             normalizer_params=self.batch_norm_params):
             net = self.build_model()
@@ -118,4 +128,3 @@ class InceptionResnetV1(AbstractNet):
         # todo: написать код для корректной загрузки переменных
         #  ( например: variables_to_restore = slim.get_model_variables())
         return None, age_logits, gender_logits
-

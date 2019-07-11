@@ -45,7 +45,9 @@ train:
         step_size: 20
         gamma: 0.99994
         mode: exp_range
-  weight_decay: 0.00001
+  weight_decay: 0.1
+  age_regulizer: 0.1
+  gender_regulizer: 0.1
   epochs: 50
   batch_size: 16  # 30 максимум для GeForce 1060
   keep_prob: 0.8

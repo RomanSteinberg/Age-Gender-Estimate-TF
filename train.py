@@ -7,7 +7,7 @@ from tensorflow.core.framework import summary_pb2
 import numpy as np
 from collections import deque
 from datetime import datetime, timedelta
-
+from glob import glob
 from age_gender.utils.dataloader import DataLoader
 from age_gender.utils.config_parser import get_config
 from age_gender.nets.inception_resnet_v1 import InceptionResnetV1
@@ -28,7 +28,7 @@ class MetricsWriter:
     def dump(self, batch, files, deque):
         current_metrics = {
             'batch': batch,
-            'files': byte_to_str(files.tolist()),
+            'files': [s.decode('utf-8') for s in files],
             'mae_deque': [float(n) for n in deque['mae']],
             'accuracy_deque': [float(n) for n in deque['gender_acc']],
             'mae': float(np.mean(deque['mae'])),
@@ -44,7 +44,11 @@ class ModelManager:
         self._config = config
         self.learning_rate_manager = LearningRateManager(
             self._config['init']['learning_rate'])
-        self.model = models[config['init']['model']]()
+        self.model = models[config['init']['model']](
+            weight_decay=config['weight_decay'],
+            age_regulizer=config['age_regulizer'],
+            gender_regulizer=config['gender_regulizer']
+        )
         self.num_epochs = config['epochs']
         self.train_size = 0
         self.test_size = None
@@ -115,8 +119,7 @@ class ModelManager:
             print('trained_epochs', trained_epochs)
 
             start_time = {'train': datetime.now()}
-            saver.save_hyperparameters(self.experiment_folder, time_spent(
-                start_time['train']), self._config)
+            self.save_hyperparameters(start_time)
             fpaths = list()
             if self.mode == 'start':
                 sess.run(self.reset_global_step_op)
@@ -134,11 +137,11 @@ class ModelManager:
                              self.age_labels: train_age_labels,
                              self.gender_labels: train_gender_labels,
                              }
-                _, train_metrics_and_errors, step, bottleneck = sess.run([self.train_op, self.train_metrics_and_errors,
-                                                                          self.global_step, self.bottleneck],
-                                                                         feed_dict=feed_dict)
+                _, train_metrics_and_errors, step, bottleneck, regularized_vars = sess.run([self.train_op, self.train_metrics_and_errors,
+                                                                                            self.global_step, self.bottleneck, self.regularized_vars],
+                                                                                           feed_dict=feed_dict)
                 #print('step: ', step)
-                # print(self.train_metrics_deque)
+                #print('regularized_vars', regularized_vars)
                 self.train_metrics_deque, summaries = get_streaming_metrics(self.train_metrics_deque,
                                                                             train_metrics_and_errors, 'train')
                 summary_writer.add_summary(summaries, step)
@@ -176,7 +179,7 @@ class ModelManager:
                         f'Train {tr_batch_idx} batches plus test time take {t}')
                     save_path = saver.save(sess, os.path.join(
                         self.experiment_folder, "model.ckpt"), global_step=tr_batch_idx)
-                    self.save_hyperparameters(start_time)
+                    # self.save_hyperparameters(start_time)
                     print("Model saved in file: %s" % save_path)
 
             saver.save_model(sess, tr_batch_idx, self.experiment_folder)
@@ -202,8 +205,10 @@ class ModelManager:
     def save_hyperparameters(self, start_time):
         self._config['duration'] = time_spent(start_time['train'])
         self._config['date'] = datetime.now().strftime("%Y_%m_%d_%H_%M")
+        num_hyperparams = len(glob(self.experiment_folder + '/*.yaml'))
+        hyperparams_name = "hyperparams.yaml" if num_hyperparams == 0 else f"hyperparams_{num_hyperparams}.yaml"
         json_parameters_path = os.path.join(
-            self.experiment_folder, "hyperparams.yaml")
+            self.experiment_folder, hyperparams_name)
         with open(json_parameters_path, 'w') as file:
             yaml.dump(self._config, file, default_flow_style=False)
 
@@ -231,7 +236,8 @@ class ModelManager:
 
         total_loss = tf.add_n(
             [gender_cross_entropy_mean, age_cross_entropy_mean] + tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES))
-
+        self.regularized_vars = tf.get_collection(
+            tf.GraphKeys.REGULARIZATION_LOSSES)
         self.reset_global_step_op = tf.assign(self.global_step, 0)
 
         lr = self.learning_rate_manager.get_learning_rate(self.global_step)
