@@ -43,8 +43,12 @@ class ModelManager:
         # parameters
         self._models_config = get_config(config, 'models')
         self._train_config = get_config(config, 'train')
+        self._learning_rates_config = get_config(config, 'learning_rates')
+        learning_rate = self._train_config['init']['learning_rate']
         self.learning_rate_manager = LearningRateManager(
-            self._train_config['init']['learning_rate'])
+            learning_rate,
+            self._learning_rates_config[learning_rate]
+        )
         self.model = models[self._train_config['init']['model']](
             **self._models_config[self._train_config['init']['model']])
         self.num_epochs = self._train_config['epochs']

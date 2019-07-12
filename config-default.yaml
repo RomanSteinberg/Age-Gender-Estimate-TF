@@ -13,7 +13,20 @@ models:
     gender_regularizer: 0.1
 
   resnet_v2_50:
-  
+
+learning_rates:
+  exponential:
+    learning_rate: 0.001
+    decay_steps: 3000
+    decay_rate: 0.9
+    staircase: True
+  cyclic:
+    learning_rate: 0.001
+    max_lr: 0.1
+    step_size: 20
+    gamma: 0.99994
+    mode: exp_range
+    
 prepare:
   general:
     dataset_path: data/dataset.json
@@ -40,25 +53,13 @@ train:
     # файл модели или папка с файлами для загрузки с диска
     model_path: models/pretrained_models
     # частота сохранения моделей
+    val_frequency: 5  
     # от значения train_mode зависит, куда будут сохраняться модели
     #  1) start - во вновь созданную папку
     #  2) continue - в папку с предобученной моделью
     #  3) test - запустить анализ результатов для обученной модели model_path
-    save_frequency: 5  
     mode: start
-    learning_rate:
-      method: exponential
-      exponential:
-        learning_rate: 0.001
-        decay_steps: 3000
-        decay_rate: 0.9
-        staircase: True
-      cyclic:
-        learning_rate: 0.001
-        max_lr: 0.1
-        step_size: 20
-        gamma: 0.99994
-        mode: exp_range
+    learning_rate: exponential
   epochs: 50
   batch_size: 16  # 30 максимум для GeForce 1060
   cuda: True
