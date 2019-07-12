@@ -41,22 +41,20 @@ class MetricsWriter:
 class ModelManager:
     def __init__(self, config):
         # parameters
-        self._config = config
+        self._models_config = get_config(config, 'models')
+        self._train_config = get_config(config, 'train')
         self.learning_rate_manager = LearningRateManager(
-            self._config['init']['learning_rate'])
-        self.model = models[config['init']['model']](
-            weight_decay=config['weight_decay'],
-            age_regulizer=config['age_regulizer'],
-            gender_regulizer=config['gender_regulizer']
-        )
-        self.num_epochs = config['epochs']
+            self._train_config['init']['learning_rate'])
+        self.model = models[self._train_config['init']['model']](
+            **self._models_config[self._train_config['init']['model']])
+        self.num_epochs = self._train_config['epochs']
         self.train_size = 0
         self.test_size = None
         self.validation_frequency = None
-        self.batch_size = config['batch_size']
-        self.val_frequency = config['init']['val_frequency']
-        self.mode = config['init']['mode']
-        self.pretrained_model_folder_or_file = config['init']['pretrained_model_folder_or_file']
+        self.batch_size = self._train_config['batch_size']
+        self.val_frequency = self._train_config['init']['val_frequency']
+        self.mode = self._train_config['init']['mode']
+        self.model_path = self._train_config['init']['model_path']
         self.experiment_folder = self.get_experiment_folder(self.mode)
 
         # operations
@@ -111,7 +109,7 @@ class ModelManager:
             sess.run(tf.global_variables_initializer())
             saver = ModelSaver(
                 var_list=self.variables_to_restore, max_to_keep=100)
-            saver.restore_model(sess, self.pretrained_model_folder_or_file)
+            saver.restore_model(sess, self.model_path)
             trained_steps = sess.run(self.global_step)
             print('trained_steps', trained_steps)
             trained_epochs = self.calculate_trained_epochs(
@@ -186,14 +184,14 @@ class ModelManager:
 
     def get_experiment_folder(self, mode):
         if mode == 'start':
-            working_dir = self._config['working_dir']
+            working_dir = self._train_config['working_dir']
             experiment_folder = os.path.join(
                 working_dir, 'experiments', datetime.now().strftime("%Y_%m_%d_%H_%M"))
             os.makedirs(experiment_folder, exist_ok=True)
         elif mode == 'continue':
             experiment_folder = \
-                self.pretrained_model_folder_or_file if os.path.isdir(self.pretrained_model_folder_or_file) else \
-                os.path.dirname(self.pretrained_model_folder_or_file)
+                self.model_path if os.path.isdir(self.model_path) else \
+                os.path.dirname(self.model_path)
         else:
             experiment_folder = 'experiments'
         return experiment_folder
@@ -203,14 +201,14 @@ class ModelManager:
         return (trained_steps - self.model.trained_steps) // num_batches
 
     def save_hyperparameters(self, start_time):
-        self._config['duration'] = time_spent(start_time['train'])
-        self._config['date'] = datetime.now().strftime("%Y_%m_%d_%H_%M")
+        self._train_config['duration'] = time_spent(start_time['train'])
+        self._train_config['date'] = datetime.now().strftime("%Y_%m_%d_%H_%M")
         num_hyperparams = len(glob(self.experiment_folder + '/*.yaml'))
         hyperparams_name = "hyperparams.yaml" if num_hyperparams == 0 else f"hyperparams_{num_hyperparams}.yaml"
         json_parameters_path = os.path.join(
             self.experiment_folder, hyperparams_name)
         with open(json_parameters_path, 'w') as file:
-            yaml.dump(self._config, file, default_flow_style=False)
+            yaml.dump(self._train_config, file, default_flow_style=False)
 
     def create_computational_graph(self):
         self.variables_to_restore, age_logits, gender_logits = self.model.inference(
@@ -268,10 +266,10 @@ class ModelManager:
                            tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.model.bottleneck_scope)]
 
     def init_data_loader(self, mode):
-        dataset_path = self._config['init'][f'{mode}_dataset_path']
-        dataset_json_config = self._config['init']['dataset_json_loader']
+        dataset_path = self._train_config['init'][f'{mode}_dataset_path']
+        dataset_json_config = self._train_config['init']['dataset_json_loader']
         dataset_json = json.load(Path(dataset_path).open())
-        if self._config['init']['balance_dataset']:
+        if self._train_config['init']['balance_dataset']:
             dataset_json_loader = DatasetJsonLoader(
                 dataset_json_config, dataset_json)
             dataset_json = dataset_json_loader.get_dataset()
@@ -308,7 +306,7 @@ def get_streaming_metrics(metrics_deque, metrics_and_errors, mode):
 
 
 if __name__ == '__main__':
-    config = get_config('config.yaml', 'train')
-    if not config['cuda']:
+    config = get_config('config.yaml')
+    if not config['train']['cuda']:
         os.environ['CUDA_VISIBLE_DEVICES'] = ''
     ModelManager(config).train()

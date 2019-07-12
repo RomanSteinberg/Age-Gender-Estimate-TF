@@ -9,17 +9,16 @@ from age_gender.nets.abstract_net import AbstractNet
 
 
 class InceptionResnetV1(AbstractNet):
-    def __init__(self, keep_probability=0.8, phase_train=True, bottleneck_layer_size=128, reuse=None,
-                 dropout_keep_prob=0.8, is_training=True, weight_decay=0.01, age_regulizer=0.01, gender_regulizer=0.01):
+    def __init__(self, keep_probability, bottleneck_layer_size, reuse, dropout_keep_prob, common_layer_regularizer, age_regularizer, gender_regularizer,  phase_train=True, is_training=True):
         super().__init__()
         self.global_step = tf.Variable(0, name='global_step', trainable=True)
         self.bottleneck_scope = 'InceptionResnetV1/Bottleneck'
         self.keep_probability = keep_probability
         self.phase_train = phase_train
         self.bottleneck_layer_size = bottleneck_layer_size
-        self.weight_decay = weight_decay
-        self.age_regulizer = age_regulizer
-        self.gender_regulizer = gender_regulizer
+        self.common_layer_regularizer = common_layer_regularizer
+        self.age_regularizer = age_regularizer
+        self.gender_regularizer = gender_regularizer
         self.reuse = reuse
         self.dropout_keep_prob = dropout_keep_prob
         self.is_training = is_training
@@ -102,7 +101,7 @@ class InceptionResnetV1(AbstractNet):
                                     weights_initializer=tf.truncated_normal_initializer(
                                         stddev=0.01),
                                     weights_regularizer=slim.l2_regularizer(
-                                        self.age_regulizer),
+                                        self.age_regularizer),
                                     scope='logits/age', reuse=False)
 
     def get_gender_logits(self, net):
@@ -110,7 +109,7 @@ class InceptionResnetV1(AbstractNet):
                                     weights_initializer=tf.truncated_normal_initializer(
                                         stddev=0.01),
                                     weights_regularizer=slim.l2_regularizer(
-                                        self.gender_regulizer),
+                                        self.gender_regularizer),
                                     scope='logits/gender', reuse=False)
 
     def inference(self, images):
@@ -119,7 +118,7 @@ class InceptionResnetV1(AbstractNet):
                             weights_initializer=tf.truncated_normal_initializer(
                                 stddev=0.1),
                             weights_regularizer=slim.l2_regularizer(
-                                self.weight_decay),
+                                self.common_layer_regularizer),
                             normalizer_fn=slim.batch_norm,
                             normalizer_params=self.batch_norm_params):
             net = self.build_model()

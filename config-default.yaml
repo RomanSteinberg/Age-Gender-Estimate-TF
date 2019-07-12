@@ -2,7 +2,18 @@ general:
   working_dir: ./
   logging_level: INFO
 
+models:
+  inception_resnet_v1:
+    keep_probability: 0.8
+    bottleneck_layer_size: 128
+    dropout_keep_prob: 0.8
+    reuse: null
+    common_layer_regularizer: 0.1
+    age_regularizer: 0.1
+    gender_regularizer: 0.1
 
+  resnet_v2_50:
+  
 prepare:
   general:
     dataset_path: data/dataset.json
@@ -24,13 +35,16 @@ train:
     dataset_json_loader:
       ages: [20, 50 ,100]
       weights: [13.67, 1, 4.22]
-    model: inception_resnet_v1 #  варианты: 1) inception_resnet_v1     2) resnet_v2_50
-    pretrained_model_folder_or_file: models/pretrained_models # файл модели или папка с файлами для загрузки с диска
-    save_frequency: 5  # частота сохранения моделей
+    #  варианты: 1) inception_resnet_v1     2) resnet_v2_50
+    model: inception_resnet_v1
+    # файл модели или папка с файлами для загрузки с диска
+    model_path: models/pretrained_models
+    # частота сохранения моделей
     # от значения train_mode зависит, куда будут сохраняться модели
     #  1) start - во вновь созданную папку
     #  2) continue - в папку с предобученной моделью
-    #  3) test - запустить анализ результатов для обученной модели pretrained_model_folder_or_file
+    #  3) test - запустить анализ результатов для обученной модели model_path
+    save_frequency: 5  
     mode: start
     learning_rate:
       method: exponential
@@ -45,12 +59,8 @@ train:
         step_size: 20
         gamma: 0.99994
         mode: exp_range
-  weight_decay: 0.1
-  age_regulizer: 0.1
-  gender_regulizer: 0.1
   epochs: 50
   batch_size: 16  # 30 максимум для GeForce 1060
-  keep_prob: 0.8
   cuda: True
   face_area_threshold: 2500
 
