@@ -5,7 +5,6 @@ from pathlib import Path
 import tensorflow as tf
 from tensorflow.core.framework import summary_pb2
 import numpy as np
-from collections import deque
 from datetime import datetime, timedelta
 from glob import glob
 from age_gender.utils.dataloader import DataLoader
@@ -15,27 +14,10 @@ from age_gender.nets.resnet_v2_50 import ResNetV2_50
 from age_gender.utils.model_saver import ModelSaver
 from age_gender.utils.dataset_json_loader import DatasetJsonLoader
 from age_gender.nets.learning_rate_manager import LearningRateManager
+from age_gender.utils.json_metrics_saver import JsonMetricsWriter
 
 models = {'inception_resnet_v1': InceptionResnetV1,
           'resnet_v2_50': ResNetV2_50}
-
-
-class MetricsWriter:
-    def __init__(self, file_name):
-        self.file_name = file_name
-        self.metrics_list = list()
-
-    def dump(self, batch, files, deque):
-        current_metrics = {
-            'batch': batch,
-            'files': [s.decode('utf-8') for s in files],
-            'mae_deque': [float(n) for n in deque['mae']],
-            'accuracy_deque': [float(n) for n in deque['gender_acc']],
-            'mae': float(np.mean(deque['mae'])),
-            'gender_accuracy': float(np.mean(deque['gender_acc'])),
-        }
-        self.metrics_list.append(current_metrics)
-        json.dump(self.metrics_list, Path(self.file_name).open(mode='w'))
 
 
 class ModelManager:
@@ -78,25 +60,24 @@ class ModelManager:
             tf.float32, shape=[None, 256, 256, 3])
         self.age_labels = tf.placeholder(tf.int32)
         self.gender_labels = tf.placeholder(tf.int32)
-        self.train_metrics_deque = {}
-        self.test_metrics_deque = {}
-        self.train_metrics_writer = MetricsWriter(
-            str(Path(self.experiment_folder).joinpath('train_metrics.json')))
-        self.test_metrics_writer = MetricsWriter(
-            str(Path(self.experiment_folder).joinpath('test_metrics.json')))
         # todo: вынести константы
-
-    def create_metric_deques(self):
-        for name in self.test_metrics_and_errors.keys():
-            self.test_metrics_deque[name] = deque(maxlen=self.val_frequency)
-        for name in self.train_metrics_and_errors.keys():
-            self.train_metrics_deque[name] = deque(maxlen=self.val_frequency)
 
     def train(self):
         os.makedirs(self.experiment_folder, exist_ok=True)
         log_dir = os.path.join(self.experiment_folder, 'logs')
         self.create_computational_graph()
-        self.create_metric_deques()
+        self.train_json_metrics_writer = JsonMetricsWriter(
+            str(Path(self.experiment_folder).joinpath('train_metrics.json')),
+            self.train_metrics_and_errors.keys(),
+            self.val_frequency
+        )
+        self.test_json_metrics_writer = JsonMetricsWriter(
+            str(Path(self.experiment_folder).joinpath('test_metrics.json')),
+            self.test_metrics_and_errors.keys(),
+            self.val_frequency
+        )
+        self.train_metrics_deque = self.train_json_metrics_writer.create_metric_deque()
+        self.test_metrics_deque = self.test_json_metrics_writer.create_metric_deque()
         next_data_element, self.train_init_op, self.train_size = self.init_data_loader(
             self._dataset_config['train_desc_path'],
             self._dataset_config['images_path'],
@@ -158,7 +139,7 @@ class ModelManager:
                 self.train_metrics_deque, summaries = get_streaming_metrics(self.train_metrics_deque,
                                                                             train_metrics_and_errors, 'train')
                 summary_writer.add_summary(summaries, step)
-                self.train_metrics_writer.dump(
+                self.train_json_metrics_writer.dump(
                     int(step), file_paths, self.train_metrics_deque)
 
                 if (step - trained_steps) % self.val_frequency == 0:
@@ -183,7 +164,7 @@ class ModelManager:
                             step) - self.val_frequency + ts_batch_idx
                         summary_writer.add_summary(
                             summaries, current_batch_num)
-                        self.test_metrics_writer.dump(
+                        self.test_json_metrics_writer.dump(
                             current_batch_num, test_file_paths, self.test_metrics_deque)
                     t = time_spent(start_time['test_epoch'])
                     print(f'Test takes {t}')
@@ -315,7 +296,6 @@ def get_streaming_metrics(metrics_deque, metrics_and_errors, mode):
         summary = summary_pb2.Summary.Value(
             tag=f'{mode}/{name}', simple_value=metric)
         summaries_list.append(summary)
-    # todo: для train добавить вычисление гистограммы
     summaries = summary_pb2.Summary(value=summaries_list)
     return metrics_deque, summaries
 
