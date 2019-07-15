@@ -121,8 +121,8 @@ class ModelManager:
                 sess.run(self.reset_global_step_op)
                 trained_steps = 0
                 print('global_step turned to zero')
+            sess.run(self.train_init_op)
             for tr_batch_idx in range((1+trained_epochs)*num_batches, (1+trained_epochs+self.num_epochs)*num_batches):
-                sess.run(self.train_init_op)
                 # start_time.update({'train_epoch': datetime.now()})
                 train_images, train_age_labels, train_gender_labels, file_paths = sess.run(
                     next_data_element)
