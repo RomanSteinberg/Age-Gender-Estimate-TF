@@ -43,22 +43,25 @@ class ModelManager:
         # parameters
         self._models_config = get_config(config, 'models')
         self._train_config = get_config(config, 'train')
+        self._dataset_config = get_config(config, 'datasets')[self._train_config['dataset']]
+        if not self._train_config['balance_dataset']:
+            self._dataset_config['balance'] = None
         self._learning_rates_config = get_config(config, 'learning_rates')
-        learning_rate = self._train_config['init']['learning_rate']
+        learning_rate = self._train_config['learning_rate']
         self.learning_rate_manager = LearningRateManager(
             learning_rate,
             self._learning_rates_config[learning_rate]
         )
-        self.model = models[self._train_config['init']['model']](
-            **self._models_config[self._train_config['init']['model']])
+        self.model = models[self._train_config['model']](
+            **self._models_config[self._train_config['model']])
         self.num_epochs = self._train_config['epochs']
         self.train_size = 0
         self.test_size = None
         self.validation_frequency = None
         self.batch_size = self._train_config['batch_size']
-        self.val_frequency = self._train_config['init']['val_frequency']
-        self.mode = self._train_config['init']['mode']
-        self.model_path = self._train_config['init']['model_path']
+        self.val_frequency = self._train_config['val_frequency']
+        self.mode = self._train_config['mode']
+        self.model_path = self._train_config['model_path']
         self.experiment_folder = self.get_experiment_folder(self.mode)
 
         # operations
@@ -72,7 +75,7 @@ class ModelManager:
         self.test_summary = None
         self.test_init_op = None
         self.images = tf.placeholder(
-            tf.float32, shape=[self.batch_size, 256, 256, 3])
+            tf.float32, shape=[None, 256, 256, 3])
         self.age_labels = tf.placeholder(tf.int32)
         self.gender_labels = tf.placeholder(tf.int32)
         self.train_metrics_deque = {}
@@ -95,11 +98,17 @@ class ModelManager:
         self.create_computational_graph()
         self.create_metric_deques()
         next_data_element, self.train_init_op, self.train_size = self.init_data_loader(
-            'train')
+            self._dataset_config['train_desc_path'],
+            self._dataset_config['images_path'],
+            self._dataset_config['balance']
+        )
         next_test_data, self.test_init_op, self.test_size = self.init_data_loader(
-            'test')
-
-        num_batches = (self.train_size + 1) // self.batch_size
+            self._dataset_config['test_desc_path'],
+            self._dataset_config['images_path'],
+            self._dataset_config['balance'],
+            self.val_frequency * self.batch_size
+        )
+        num_batches = self.train_size // self.batch_size + (self.train_size % self.batch_size != 0)
         print(f'Train size: {self.train_size}, test size: {self.test_size}')
         print(
             f'Epochs in train: {self.num_epochs}, batches in epoch: {num_batches}')
@@ -113,7 +122,10 @@ class ModelManager:
             sess.run(tf.global_variables_initializer())
             saver = ModelSaver(
                 var_list=self.variables_to_restore, max_to_keep=100)
-            saver.restore_model(sess, self.model_path)
+            if self._train_config['model_path'] is not None:
+                saver.restore_model(sess, self.model_path)
+            else:
+                print('start training from zero')
             trained_steps = sess.run(self.global_step)
             print('trained_steps', trained_steps)
             trained_epochs = self.calculate_trained_epochs(
@@ -143,7 +155,6 @@ class ModelManager:
                                                                                             self.global_step, self.bottleneck, self.regularized_vars],
                                                                                            feed_dict=feed_dict)
                 #print('step: ', step)
-                #print('regularized_vars', regularized_vars)
                 self.train_metrics_deque, summaries = get_streaming_metrics(self.train_metrics_deque,
                                                                             train_metrics_and_errors, 'train')
                 summary_writer.add_summary(summaries, step)
@@ -269,19 +280,19 @@ class ModelManager:
         self.bottleneck = [v for v in
                            tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.model.bottleneck_scope)]
 
-    def init_data_loader(self, mode):
-        dataset_path = self._train_config['init'][f'{mode}_dataset_path']
-        dataset_json_config = self._train_config['init']['dataset_json_loader']
-        dataset_json = json.load(Path(dataset_path).open())
-        if self._train_config['init']['balance_dataset']:
+    def init_data_loader(self, desc_path, images_path, balance_config=None, min_size=None):
+        desc = json.load(Path(desc_path).open())
+        if balance_config is not None:
             dataset_json_loader = DatasetJsonLoader(
-                dataset_json_config, dataset_json)
-            dataset_json = dataset_json_loader.get_dataset()
-        data_folder = os.path.dirname(dataset_path)
-        loader = DataLoader(dataset_json, data_folder)
+                balance_config, desc)
+            desc = dataset_json_loader.get_dataset()
+        loader = DataLoader(desc, images_path)
+        if min_size is not None and loader.dataset_len() < min_size:
+            repeat_count = min_size // loader.dataset_len() + (loader.dataset_len() % min_size != 0)
+        else:
+            repeat_count = 1
         dataset = loader.create_dataset(
-            perform_shuffle=True, batch_size=self.batch_size)
-
+            perform_shuffle=True, batch_size=self.batch_size, repeat_count=repeat_count)
         iterator = tf.data.Iterator.from_structure(
             dataset.output_types, dataset.output_shapes)
         next_data_element = iterator.get_next()

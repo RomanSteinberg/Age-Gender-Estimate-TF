@@ -37,9 +37,7 @@ class ModelManager:
         self.create_computational_graph()
         next_data_element, self.data_loader_init_op, self.dataset_size = self.init_data_loader(
             self._config['dataset_path'])
-        num_batches = self.dataset_size // self.batch_size
-        if (self.dataset_size) % self.batch_size != 0:
-            num_batches += 1
+        num_batches = self.dataset_size // self.batch_size + (self.dataset_size % self.batch_size != 0)
         with tf.Graph().as_default() and tf.Session() as sess:
             sess.run(self.init_op)
             sess.run(self.data_loader_init_op)
