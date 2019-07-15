@@ -1,6 +1,7 @@
 import os
 import yaml
 import json
+import argparse
 from pathlib import Path
 import tensorflow as tf
 from tensorflow.core.framework import summary_pb2
@@ -203,8 +204,13 @@ class ModelManager:
         hyperparams_name = "hyperparams.yaml" if num_hyperparams == 0 else f"hyperparams_{num_hyperparams}.yaml"
         json_parameters_path = os.path.join(
             self.experiment_folder, hyperparams_name)
+        config = dict()
+        config['model'] = self._models_config[self._train_config['model']]
+        config['learning_rate'] = self._learning_rates_config[self._train_config['learning_rate']]
+        config['dataset'] = self._dataset_config
+        config['train'] = self._train_config
         with open(json_parameters_path, 'w') as file:
-            yaml.dump(self._train_config, file, default_flow_style=False)
+            yaml.dump(config, file, default_flow_style=False)
 
     def create_computational_graph(self):
         self.variables_to_restore, age_logits, gender_logits = self.model.inference(
@@ -301,7 +307,10 @@ def get_streaming_metrics(metrics_deque, metrics_and_errors, mode):
 
 
 if __name__ == '__main__':
-    config = get_config('config.yaml')
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", type=str, default="config.yaml", help="config")
+    args = parser.parse_args()
+    config = get_config(args.config)
     if not config['train']['cuda']:
         os.environ['CUDA_VISIBLE_DEVICES'] = ''
     ModelManager(config).train()
