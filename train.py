@@ -8,12 +8,11 @@ from tensorflow.core.framework import summary_pb2
 import numpy as np
 from datetime import datetime, timedelta
 from glob import glob
-from age_gender.utils.dataloader import DataLoader
+from age_gender.utils.dataloader import init_data_loader
 from age_gender.utils.config_parser import get_config
 from age_gender.nets.inception_resnet_v1 import InceptionResnetV1
 from age_gender.nets.resnet_v2_50 import ResNetV2_50
 from age_gender.utils.model_saver import ModelSaver
-from age_gender.utils.dataset_json_loader import DatasetJsonLoader
 from age_gender.nets.learning_rate_manager import LearningRateManager
 from age_gender.utils.json_metrics_saver import JsonMetricsWriter
 
@@ -26,7 +25,8 @@ class ModelManager:
         # parameters
         self._models_config = get_config(config, 'models')
         self._train_config = get_config(config, 'train')
-        self._dataset_config = get_config(config, 'datasets')[self._train_config['dataset']]
+        self._dataset_config = get_config(config, 'datasets')[
+            self._train_config['dataset']]
         if not self._train_config['balance_dataset']:
             self._dataset_config['balance'] = None
         self._learning_rates_config = get_config(config, 'learning_rates')
@@ -79,18 +79,22 @@ class ModelManager:
         )
         self.train_metrics_deque = self.train_json_metrics_writer.create_metric_deque()
         self.test_metrics_deque = self.test_json_metrics_writer.create_metric_deque()
-        next_data_element, self.train_init_op, self.train_size = self.init_data_loader(
+        next_data_element, self.train_init_op, self.train_size = init_data_loader(
+            self.batch_size,
             self._dataset_config['train_desc_path'],
             self._dataset_config['images_path'],
-            self._dataset_config['balance']
+            self._dataset_config['balance'],
+            self.num_epochs
         )
-        next_test_data, self.test_init_op, self.test_size = self.init_data_loader(
+        next_test_data, self.test_init_op, self.test_size = init_data_loader(
+            self.batch_size,
             self._dataset_config['test_desc_path'],
             self._dataset_config['images_path'],
             self._dataset_config['balance'],
             self.val_frequency * self.batch_size
         )
-        num_batches = self.train_size // self.batch_size + (self.train_size % self.batch_size != 0)
+        num_batches = self.train_size // self.batch_size + \
+            (self.train_size % self.batch_size != 0)
         print(f'Train size: {self.train_size}, test size: {self.test_size}')
         print(
             f'Epochs in train: {self.num_epochs}, batches in epoch: {num_batches}')
@@ -267,25 +271,6 @@ class ModelManager:
         self.bottleneck = [v for v in
                            tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.model.bottleneck_scope)]
 
-    def init_data_loader(self, desc_path, images_path, balance_config=None, min_size=None):
-        desc = json.load(Path(desc_path).open())
-        if balance_config is not None:
-            dataset_json_loader = DatasetJsonLoader(
-                balance_config, desc)
-            desc = dataset_json_loader.get_dataset()
-        loader = DataLoader(desc, images_path)
-        if min_size is not None and loader.dataset_len() < min_size:
-            repeat_count = min_size // loader.dataset_len() + (loader.dataset_len() % min_size != 0)
-        else:
-            repeat_count = 1
-        dataset = loader.create_dataset(
-            perform_shuffle=True, batch_size=self.batch_size, repeat_count=repeat_count)
-        iterator = tf.data.Iterator.from_structure(
-            dataset.output_types, dataset.output_shapes)
-        next_data_element = iterator.get_next()
-        training_init_op = iterator.make_initializer(dataset)
-        return next_data_element, training_init_op, loader.dataset_len()
-
 
 def time_spent(start):
     sec = int((datetime.now() - start).total_seconds())
@@ -308,7 +293,8 @@ def get_streaming_metrics(metrics_deque, metrics_and_errors, mode):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", type=str, default="config.yaml", help="config")
+    parser.add_argument("--config", type=str,
+                        default="config.yaml", help="config")
     args = parser.parse_args()
     config = get_config(args.config)
     if not config['train']['cuda']:
