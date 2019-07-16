@@ -80,18 +80,22 @@ class ModelManager:
         self.train_metrics_deque = self.train_json_metrics_writer.create_metric_deque()
         self.test_metrics_deque = self.test_json_metrics_writer.create_metric_deque()
         next_data_element, self.train_init_op, self.train_size = init_data_loader(
-            self.batch_size,
-            self._dataset_config['train_desc_path'],
-            self._dataset_config['images_path'],
-            self._dataset_config['balance'],
-            self.num_epochs
+            batch_size=self.batch_size,
+            desc_path=self._dataset_config['train_desc_path'],
+            images_path=self._dataset_config['images_path'],
+            balance_config=self._dataset_config['balance'],
+            epochs=self.num_epochs,
+            num_prefetch=self._train_config['num_prefetch'],
+            num_parallel_calls=self._train_config['num_parallel_calls']
         )
         next_test_data, self.test_init_op, self.test_size = init_data_loader(
-            self.batch_size,
-            self._dataset_config['test_desc_path'],
-            self._dataset_config['images_path'],
-            self._dataset_config['balance'],
-            self.val_frequency * self.batch_size
+            batch_size=self.batch_size,
+            desc_path=self._dataset_config['test_desc_path'],
+            images_path=self._dataset_config['images_path'],
+            balance_config=self._dataset_config['balance'],
+            min_size=self.val_frequency * self.batch_size,
+            num_prefetch=self._train_config['num_prefetch'],
+            num_parallel_calls=self._train_config['num_parallel_calls']
         )
         num_batches = self.train_size // self.batch_size + \
             (self.train_size % self.batch_size != 0)
