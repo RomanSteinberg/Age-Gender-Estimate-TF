@@ -116,20 +116,22 @@ class ModelManager:
                 saver.restore_model(sess, self.model_path)
             else:
                 print('start training from zero')
+            # todo: trained steps should consider loading Boyan and loading our own model
             trained_steps = sess.run(self.global_step)
             print('trained_steps', trained_steps)
             trained_epochs = self.calculate_trained_epochs(
                 trained_steps, num_batches)
             print('trained_epochs', trained_epochs)
 
-            start_time = {'train': datetime.now()}
-            self.save_hyperparameters(start_time)
             fpaths = list()
             if self.mode == 'start':
                 sess.run(self.reset_global_step_op)
                 trained_steps = 0
                 print('global_step turned to zero')
+
             sess.run(self.train_init_op)
+            start_time = {'train': datetime.now()}
+            self.save_hyperparameters(start_time)
             for tr_batch_idx in range((1+trained_epochs)*num_batches, (1+trained_epochs+self.num_epochs)*num_batches):
                 # start_time.update({'train_epoch': datetime.now()})
                 train_images, train_age_labels, train_gender_labels, file_paths = sess.run(
