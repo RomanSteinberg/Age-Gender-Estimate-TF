@@ -74,7 +74,6 @@ class DataLoader:
         if num_prefetch is not None:
             dataset = dataset.prefetch(num_prefetch)
         return dataset.repeat(repeat_count)
-        # return dataset.make_one_shot_iterator().get_next()
 
     def dataset_len(self):
         return len(self.description)
@@ -91,18 +90,20 @@ def init_data_loader(batch_size, desc_path, images_path, balance_config=None, mi
     loader = DataLoader(desc, images_path)
     repeat_count = 1
     if min_size is not None and loader.dataset_len() < min_size:
-        repeat_count = min_size // loader.dataset_len() + (loader.dataset_len() %
-                                                           min_size != 0)
+        repeat_count = min_size // loader.dataset_len() + (loader.dataset_len() % min_size != 0)
     if epochs is not None:
         repeat_count = epochs
     dataset = loader.create_dataset(
-        perform_shuffle=True, batch_size=batch_size, repeat_count=repeat_count, num_prefetch=num_prefetch,
-        num_parallel_calls=num_parallel_calls)
-    iterator = tf.data.Iterator.from_structure(
-        dataset.output_types, dataset.output_shapes)
+        perform_shuffle=True,
+        batch_size=batch_size,
+        repeat_count=repeat_count,
+        num_prefetch=num_prefetch,
+        num_parallel_calls=num_parallel_calls
+    )
+    iterator = tf.data.Iterator.from_structure(dataset.output_types, dataset.output_shapes)
     next_data_element = iterator.get_next()
-    training_init_op = iterator.make_initializer(dataset)
-    return next_data_element, training_init_op, loader.dataset_len()
+    init_op = iterator.make_initializer(dataset)
+    return next_data_element, init_op, loader.dataset_len()
 
 
 def visual_validation(config):

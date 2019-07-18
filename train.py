@@ -1,13 +1,13 @@
 import os
 import yaml
-import json
 import argparse
-from pathlib import Path
-import tensorflow as tf
-from tensorflow.core.framework import summary_pb2
 import numpy as np
+from pathlib import Path
 from datetime import datetime, timedelta
 from glob import glob
+import tensorflow as tf
+from tensorflow.core.framework import summary_pb2
+
 from age_gender.utils.dataloader import init_data_loader
 from age_gender.utils.config_parser import get_config
 from age_gender.nets.inception_resnet_v1 import InceptionResnetV1
@@ -15,6 +15,7 @@ from age_gender.nets.resnet_v2_50 import ResNetV2_50
 from age_gender.utils.model_saver import ModelSaver
 from age_gender.nets.learning_rate_manager import LearningRateManager
 from age_gender.utils.json_metrics_saver import JsonMetricsWriter
+from age_gender.utils.logger import Logger
 
 models = {'inception_resnet_v1': InceptionResnetV1,
           'resnet_v2_50': ResNetV2_50}
@@ -40,7 +41,6 @@ class ModelManager:
         self.num_epochs = self._train_config['epochs']
         self.train_size = 0
         self.test_size = None
-        self.validation_frequency = None
         self.batch_size = self._train_config['batch_size']
         self.val_frequency = self._train_config['val_frequency']
         self.mode = self._train_config['mode']
@@ -57,15 +57,16 @@ class ModelManager:
         self.train_init_op = None
         self.test_summary = None
         self.test_init_op = None
-        self.images = tf.placeholder(
-            tf.float32, shape=[None, 256, 256, 3])
+        self.images = tf.placeholder(tf.float32, shape=[None, 256, 256, 3])
         self.age_labels = tf.placeholder(tf.int32)
         self.gender_labels = tf.placeholder(tf.int32)
         # todo: вынести константы
 
     def train(self):
         os.makedirs(self.experiment_folder, exist_ok=True)
-        log_dir = os.path.join(self.experiment_folder, 'logs')
+        logs_folder = os.path.join(self.experiment_folder, 'logs')
+        logger = Logger('train', logs_folder)
+        logger.info('Train starts')
         self.create_computational_graph()
         self.train_json_metrics_writer = JsonMetricsWriter(
             str(Path(self.experiment_folder).joinpath('train_metrics.json')),
@@ -93,7 +94,7 @@ class ModelManager:
             desc_path=self._dataset_config['test_desc_path'],
             images_path=self._dataset_config['images_path'],
             balance_config=self._dataset_config['balance'],
-            min_size=self.val_frequency * self.batch_size,
+            min_size=self.num_epochs*self.train_size,
             num_prefetch=self._train_config['num_prefetch'],
             num_parallel_calls=self._train_config['num_parallel_calls']
         )
@@ -108,7 +109,7 @@ class ModelManager:
         with tf.Graph().as_default() and tf.Session() as sess:
             tf.random.set_random_seed(100)
             sess.run(self.init_op)
-            summary_writer = tf.summary.FileWriter(log_dir, sess.graph)
+            summary_writer = tf.summary.FileWriter(logs_folder, sess.graph)
             sess.run(tf.global_variables_initializer())
             saver = ModelSaver(
                 var_list=self.variables_to_restore, max_to_keep=100)
@@ -123,42 +124,48 @@ class ModelManager:
                 trained_steps, num_batches)
             print('trained_epochs', trained_epochs)
 
-            fpaths = list()
+            # fpaths = list()
             if self.mode == 'start':
                 sess.run(self.reset_global_step_op)
                 trained_steps = 0
                 print('global_step turned to zero')
 
             sess.run(self.train_init_op)
+            sess.run(self.test_init_op)
             start_time = {'train': datetime.now()}
+            logger.info('Initialization complete. Train loop starts.')
             self.save_hyperparameters(start_time)
             for tr_batch_idx in range((1+trained_epochs)*num_batches, (1+trained_epochs+self.num_epochs)*num_batches):
                 # start_time.update({'train_epoch': datetime.now()})
-                train_images, train_age_labels, train_gender_labels, file_paths = sess.run(
-                    next_data_element)
-                fpaths += [fp.decode('utf-8') for fp in file_paths]
-                feed_dict = {self.train_mode: True,
-                             # np.zeros([16, 256, 256, 3])
-                             self.images: train_images,
-                             self.age_labels: train_age_labels,
-                             self.gender_labels: train_gender_labels,
-                             }
-                _, train_metrics_and_errors, step, bottleneck, regularized_vars = sess.run([self.train_op, self.train_metrics_and_errors,
-                                                                                            self.global_step, self.bottleneck, self.regularized_vars],
+                logger.debug('load train batch')
+                train_images, train_age_labels, train_gender_labels, file_paths = sess.run(next_data_element)
+                logger.debug('train on batch')
+                # fpaths += [fp.decode('utf-8') for fp in file_paths]
+
+                operations = [self.train_op, self.train_metrics_and_errors, self.global_step,
+                              self.bottleneck, self.regularized_vars]
+                feed_dict = {
+                    self.train_mode: True,
+                    # np.zeros([16, 256, 256, 3])
+                    self.images: train_images,
+                    self.age_labels: train_age_labels,
+                    self.gender_labels: train_gender_labels,
+                }
+                _, train_metrics_and_errors, step, bottleneck, regularized_vars = sess.run(operations,
                                                                                            feed_dict=feed_dict)
-                #print('step: ', step)
-                self.train_metrics_deque, summaries = get_streaming_metrics(self.train_metrics_deque,
-                                                                            train_metrics_and_errors, 'train')
+                logger.debug('calc train streaming metrics')
+                summaries = get_streaming_metrics(self.train_metrics_deque, train_metrics_and_errors, 'train')
+                logger.debug('save train summaries')
                 summary_writer.add_summary(summaries, step)
-                self.train_json_metrics_writer.dump(
-                    int(step), file_paths, self.train_metrics_deque)
+                # self.train_json_metrics_writer.dump(int(step), file_paths, self.train_metrics_deque)
+                logger.debug('train iteration complete')
 
                 if (step - trained_steps) % self.val_frequency == 0:
                     start_time.update({'test_epoch': datetime.now()})
-                    sess.run([self.test_init_op])
                     for ts_batch_idx in range(1, self.val_frequency+1):
-                        test_images, test_age_labels, test_gender_labels, test_file_paths = sess.run(
-                            next_test_data)
+                        logger.debug('load test batch')
+                        test_images, test_age_labels, test_gender_labels, test_file_paths = sess.run(next_test_data)
+                        logger.debug('test on batch')
                         feed_dict = {
                             self.train_mode: False,
                             self.images: test_images,
@@ -167,16 +174,15 @@ class ModelManager:
                         }
                         # summary = sess.run(self.test_summary, feed_dict=feed_dict)
                         # train_writer.add_summary(summary, step - num_batches + batch_idx)
-                        test_metrics_and_errors = sess.run(
-                            self.test_metrics_and_errors, feed_dict=feed_dict)
-                        self.test_metrics_deque, summaries = get_streaming_metrics(self.test_metrics_deque,
-                                                                                   test_metrics_and_errors, 'test')
-                        current_batch_num = int(
-                            step) - self.val_frequency + ts_batch_idx
-                        summary_writer.add_summary(
-                            summaries, current_batch_num)
-                        self.test_json_metrics_writer.dump(
-                            current_batch_num, test_file_paths, self.test_metrics_deque)
+                        test_metrics_and_errors = sess.run(self.test_metrics_and_errors, feed_dict=feed_dict)
+                        logger.debug('calc test streaming metrics')
+                        summaries = get_streaming_metrics(self.test_metrics_deque, test_metrics_and_errors, 'test')
+                        logger.debug('save test summaries')
+                        current_batch_num = int(step) - self.val_frequency + ts_batch_idx
+                        summary_writer.add_summary(summaries, current_batch_num)
+                        # self.test_json_metrics_writer.dump(current_batch_num, test_file_paths, self.test_metrics_deque)
+                        logger.debug('test iteration complete')
+
                     t = time_spent(start_time['test_epoch'])
                     print(f'Test takes {t}')
                     t = time_spent(start_time['train'])
@@ -294,7 +300,7 @@ def get_streaming_metrics(metrics_deque, metrics_and_errors, mode):
             tag=f'{mode}/{name}', simple_value=metric)
         summaries_list.append(summary)
     summaries = summary_pb2.Summary(value=summaries_list)
-    return metrics_deque, summaries
+    return summaries
 
 
 if __name__ == '__main__':
