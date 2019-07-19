@@ -1,23 +1,20 @@
 import os
 import json
 import cv2
-import dlib
 import tensorflow as tf
-
-from imutils.face_utils import FaceAligner
-
-from convert_to_records_multiCPU import get_area, align_face
+from pathlib import Path
+from age_gender.utils.dataset_json_loader import DatasetJsonLoader
 
 
 class DataLoader:
-    def __init__(self, data_description_path):
+    def __init__(self, dataset_json, data_folder):
         """
         Args:
             data_description_path (string): json description file path.
         """
         self.image_shape = [256, 256, 3]
-        self.data_folder = os.path.dirname(data_description_path)
-        self.description = json.load(open(data_description_path, 'r'))
+        self.data_folder = data_folder
+        self.description = dataset_json
 
     def _parse_function(self, sample):
         """
@@ -44,10 +41,12 @@ class DataLoader:
         image_tn = tf.reshape(image_tn, self.image_shape)
         image_tn = tf.reverse(image_tn, [-1])
         # image_tn = tf.image.per_image_standardization(image_tn)
-        image_tn = tf.math.subtract(tf.math.divide(tf.cast(image_tn, dtype=tf.float32), tf.constant(127.5)), tf.constant(1.0))
+        image_tn = tf.math.subtract(tf.math.divide(
+            tf.cast(image_tn, dtype=tf.float32), tf.constant(127.5)), tf.constant(1.0))
         return image_tn, age, gender, file_path
 
-    def create_dataset(self, perform_shuffle=False, repeat_count=1, batch_size=1):
+    def create_dataset(self, perform_shuffle=False, repeat_count=1, batch_size=1, num_prefetch=None,
+                       num_parallel_calls=None):
         """
         Creates tf.data.Dataset object.
         Args:
@@ -61,15 +60,50 @@ class DataLoader:
         dataset = tf.data.Dataset.from_generator(
             self._generator,
             (tf.int32, tf.int32, tf.string)
-        ).map(self._read_image)
+        )
+        if num_parallel_calls is not None:
+            dataset = dataset.map(
+                self._read_image, num_parallel_calls=num_parallel_calls)
+        else:
+            dataset = dataset.map(self._read_image)
         if perform_shuffle:
             # Randomizes input using a window of 256 elements (read into memory)
-            dataset = dataset.shuffle(buffer_size=256, reshuffle_each_iteration=True)
-        return dataset.batch(batch_size).repeat(repeat_count)
-        # return dataset.make_one_shot_iterator().get_next()
+            dataset = dataset.shuffle(
+                buffer_size=256, reshuffle_each_iteration=True)
+        dataset = dataset.batch(batch_size)
+        if num_prefetch is not None:
+            dataset = dataset.prefetch(num_prefetch)
+        return dataset.repeat(repeat_count)
 
     def dataset_len(self):
         return len(self.description)
+
+
+def init_data_loader(batch_size, desc_path, images_path, balance_config=None, min_size=None, epochs=None,
+                     num_prefetch=None, num_parallel_calls=None):
+    print('desc_path', desc_path)
+    desc = json.load(Path(desc_path).open())
+    if balance_config is not None:
+        dataset_json_loader = DatasetJsonLoader(
+            balance_config, desc)
+        desc = dataset_json_loader.get_dataset()
+    loader = DataLoader(desc, images_path)
+    repeat_count = 1
+    if min_size is not None and loader.dataset_len() < min_size:
+        repeat_count = min_size // loader.dataset_len() + (loader.dataset_len() % min_size != 0)
+    if epochs is not None:
+        repeat_count = epochs
+    dataset = loader.create_dataset(
+        perform_shuffle=True,
+        batch_size=batch_size,
+        repeat_count=repeat_count,
+        num_prefetch=num_prefetch,
+        num_parallel_calls=num_parallel_calls
+    )
+    iterator = tf.data.Iterator.from_structure(dataset.output_types, dataset.output_shapes)
+    next_data_element = iterator.get_next()
+    init_op = iterator.make_initializer(dataset)
+    return next_data_element, init_op, loader.dataset_len()
 
 
 def visual_validation(config):

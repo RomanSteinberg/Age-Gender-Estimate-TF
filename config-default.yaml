@@ -2,32 +2,90 @@ general:
   working_dir: ./
   logging_level: INFO
 
+models:
+  inception_resnet_v1:
+    keep_probability: 0.8
+    bottleneck_layer_size: 128
+    dropout_keep_prob: 0.8
+    reuse: null
+    common_layer_regularizer: 0.1
+    age_regularizer: 0.1
+    gender_regularizer: 0.1
 
+  resnet_v2_50:
+
+learning_rates:
+  exponential:
+    learning_rate: 0.001
+    decay_steps: 3000
+    decay_rate: 0.9
+    staircase: True
+
+  cyclic:
+    learning_rate: 0.001
+    max_lr: 0.1
+    step_size: 20
+    gamma: 0.99994
+    mode: exp_range
+    
 prepare:
   general:
     dataset_path: data/dataset.json
     test_size: 0.2
     processed_dataset_path: data/processed_data
     n_jobs: 8
+
   image:
     size: 256
+    height_scale: 1.7
+    width_scale: 1.2
     face_score_threshold: 0.75
     face_area_threshold: 2500
 
+datasets:
+  UTKFace:
+    images_path: data/UTK_aligned
+    full_desc_path: data/UTK_aligned/dataset.json
+    train_desc_path: data/UTK_aligned/train.json
+    test_desc_path: data/UTK_aligned/test.json
+    balance:
+      ages: [20, 50 ,100]
+      weights: [3.13, 1, 3.10]
+
+  imdb_wiki_crop:
+    images_path: data/imdb_wiki
+    full_desc_path: data/imdb_wiki/dataset.json
+    train_desc_path: data/imdb_wiki/train.json
+    test_desc_path: data/imdb_wiki/test.json
+    balance:
+      ages: [20, 50 ,100]
+      weights: [13.67, 1, 4.22]
+
 train:
-  init:
-    train_dataset_path: data/imdb_wiki/train.json  # путь к json-файлу с описанием датасета для обучения
-    test_dataset_path: data/imdb_wiki/test.json  # путь к json-файлу с описанием датасета для валидации во время обучения
-    model:   # имя модели для загрузки с диска
-    save_frequency: 5  # частота сохранения моделей
-  learning_rate: 1e-3
-  weight_decay: 1e-5
-  epochs: 1
+  dataset: UTKFace
+  balance_dataset: False
+  #  варианты: 1) inception_resnet_v1     2) resnet_v2_50
+  model: inception_resnet_v1
+  # файл модели или папка с файлами для загрузки с диска
+  model_path: models/pretrained_models
+  # частота сохранения моделей
+  val_frequency: 5
+  num_prefetch: 2
+  num_parallel_calls: 2
+  # от значения train_mode зависит, куда будут сохраняться модели
+  #  1) start - во вновь созданную папку
+  #  2) continue - в папку с предобученной моделью
+  #  3) test - запустить анализ результатов для обученной модели model_path
+  mode: start
+  learning_rate: exponential
+  epochs: 50
   batch_size: 16  # 30 максимум для GeForce 1060
-  keep_prob: 0.8
   cuda: True
+  face_area_threshold: 2500
 
-
-
-
-
+inference:
+  batch_size: 16
+  dataset_path: data/UTK_aligned/dataset.json
+  model_path: experiments/2019_07_08_18_31 #/model.ckpt-14001
+  cuda: True
+  results_path: results.json

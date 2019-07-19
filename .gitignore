@@ -87,3 +87,11 @@ data
 tfrecords/*
 models/*
 experiments/*
+experiments
+
+results.json
+run.sh
+validation.py
+debug.py
+evaluation.py
+

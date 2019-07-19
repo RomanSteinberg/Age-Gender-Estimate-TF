@@ -1,27 +1,40 @@
 import tensorflow as tf
 from tensorflow.contrib import slim
 from tensorflow.contrib.slim.nets import resnet_v2
+from age_gender.nets.abstract_net import AbstractNet
 
+class ResNetV2_50(AbstractNet):
+    def __init__(self, is_training=True):
+        super().__init__()
+        self.is_training = is_training
+        self.global_step = tf.train.get_or_create_global_step()
+        self.bottleneck_scope = 'Head'
+        self.trained_steps = 5136169
 
-def build_resnet(images_tn, age_num_classes=101, gender_num_classes=2, is_training=True):
-    checkpoint_file = '/home/roman/dev/age-gender/models/pretrained_models/resnet50/resnet_v2_50.ckpt'
-    with slim.arg_scope(resnet_v2.resnet_arg_scope()):
-        resnet_logits, end_points = resnet_v2.resnet_v2_50(images_tn, is_training=is_training)
+    def get_tail(self):
+        with slim.arg_scope(resnet_v2.resnet_arg_scope()):
+            net, _ = resnet_v2.resnet_v2_50(self.images, is_training=self.is_training)
+        return net
 
-    resnet_init_fn = slim.assign_from_checkpoint_fn(checkpoint_file, [var for var in tf.global_variables()])
+    def get_head(self, net):
+        net = tf.layers.flatten(net)
+        net = tf.layers.dense(net, 1024, activation=tf.nn.relu)
+        net = tf.layers.dropout(net, 0.75, training=self.is_training)
+        return net
 
-    with tf.variable_scope('Head'):
-        resnet_flat = tf.layers.flatten(resnet_logits)
-        dense2 = tf.layers.dense(resnet_flat, 1024, activation=tf.nn.relu)
-        dropout = tf.layers.dropout(dense2, 0.75, training=is_training)
-        age_logits = tf.layers.dense(dropout, age_num_classes, activation=None)
-        gender_logits = tf.layers.dense(dropout, gender_num_classes, activation=None)
+    def get_age_logits(self, dropout):
+        return tf.layers.dense(dropout, self.age_num_classes, activation=None)
 
-    # init variables
-    init_vars = tf.variables_initializer(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='Head'))
+    def get_gender_logits(self, dropout):
+        return tf.layers.dense(dropout, self.gender_num_classes, activation=None)
 
-    def init_fn(sess):
-        sess.run(init_vars)
-        resnet_init_fn(sess)
+    def inference(self, images):
+        self.images = images
+        variables_to_restore = [var for var in slim.get_variables_to_restore()]
 
-    return init_fn, age_logits, gender_logits
+        with tf.variable_scope('Head'):
+            net = self.build_model()
+            age_logits = self.get_age_logits(net)
+            gender_logits = self.get_gender_logits(net)
+
+        return variables_to_restore, age_logits, gender_logits
