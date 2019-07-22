@@ -42,6 +42,7 @@ class ModelManager:
         self.train_size = 0
         self.test_size = None
         self.batch_size = self._train_config['batch_size']
+        self.save_frequency = self._train_config['save_frequency']
         self.val_frequency = self._train_config['val_frequency']
         self.mode = self._train_config['mode']
         self.model_path = self._train_config['model_path']
@@ -120,10 +121,6 @@ class ModelManager:
             # todo: trained steps should consider loading Boyan and loading our own model
             trained_steps = sess.run(self.global_step)
             print('trained_steps', trained_steps)
-            trained_epochs = self.calculate_trained_epochs(
-                trained_steps, num_batches)
-            print('trained_epochs', trained_epochs)
-
             # fpaths = list()
             if self.mode == 'start':
                 sess.run(self.reset_global_step_op)
@@ -160,6 +157,11 @@ class ModelManager:
                 # self.train_json_metrics_writer.dump(int(step), file_paths, self.train_metrics_deque)
                 logger.debug('train iteration complete')
 
+                if (step - trained_steps) % self.save_frequency == 0:
+                    save_path = saver.save(sess, os.path.join(
+                        self.experiment_folder, 'model.ckpt'), global_step=tr_batch_idx)
+                    print(f'Model saved in file: {save_path}')
+                
                 if (step - trained_steps) % self.val_frequency == 0:
                     start_time.update({'test_epoch': datetime.now()})
                     for ts_batch_idx in range(1, self.val_frequency+1):
@@ -188,10 +190,6 @@ class ModelManager:
                     t = time_spent(start_time['train'])
                     print(
                         f'Train {tr_batch_idx} batches plus test time take {t}')
-                    save_path = saver.save(sess, os.path.join(
-                        self.experiment_folder, "model.ckpt"), global_step=tr_batch_idx)
-                    # self.save_hyperparameters(start_time)
-                    print("Model saved in file: %s" % save_path)
 
             saver.save_model(sess, tr_batch_idx, self.experiment_folder)
 
@@ -208,10 +206,6 @@ class ModelManager:
         else:
             experiment_folder = 'experiments'
         return experiment_folder
-
-    def calculate_trained_epochs(self, trained_steps,  num_batches):
-        # return (trained_steps) // num_batches
-        return (trained_steps - self.model.trained_steps) // num_batches
 
     def save_hyperparameters(self, start_time):
         self._train_config['duration'] = time_spent(start_time['train'])

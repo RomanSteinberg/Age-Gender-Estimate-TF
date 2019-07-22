@@ -70,6 +70,7 @@ train:
   # model_path models/pretrained_models
   model_path: null
   # частота сохранения моделей
+  save_frequency: 15000
   val_frequency: 5
   num_prefetch: 2
   num_parallel_calls: 2
