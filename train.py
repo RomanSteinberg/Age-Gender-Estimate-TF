@@ -135,7 +135,7 @@ class ModelManager:
             start_time = {'train': datetime.now()}
             logger.info('Initialization complete. Train loop starts.')
             self.save_hyperparameters(start_time)
-            for tr_batch_idx in range((1+trained_epochs)*num_batches, (1+trained_epochs+self.num_epochs)*num_batches):
+            for tr_batch_idx in range(1+trained_steps, 1+trained_steps+self.num_epochs*num_batches):
                 # start_time.update({'train_epoch': datetime.now()})
                 logger.debug('load train batch')
                 train_images, train_age_labels, train_gender_labels, file_paths = sess.run(next_data_element)
