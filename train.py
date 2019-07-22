@@ -114,7 +114,7 @@ class ModelManager:
             saver = ModelSaver(
                 var_list=self.variables_to_restore, max_to_keep=100)
             if self._train_config['model_path'] is not None:
-                saver.restore_model(sess, self.model_path)
+                self._train_config['model_path'] = saver.restore_model(sess, self.model_path)
             else:
                 print('start training from zero')
             # todo: trained steps should consider loading Boyan and loading our own model

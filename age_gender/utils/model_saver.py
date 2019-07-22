@@ -9,11 +9,12 @@ class ModelSaver(tf.train.Saver):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def restore_model(self, sess, model_folder_or_path):
-        model_checkpoint = self.get_model_checkpoint(model_folder_or_path)
+    def restore_model(self, sess, model_path):
+        model_checkpoint = self.get_model_checkpoint(model_path)
         if model_checkpoint is not None:
             self.restore(sess, model_checkpoint)
             print('Pretrained model loaded')
+            return model_checkpoint
         else:
             print('No pretrained models found')
 
@@ -22,10 +23,10 @@ class ModelSaver(tf.train.Saver):
         print("Model saved in file: %s" % save_path)
 
     @staticmethod
-    def get_model_checkpoint(model_folder_or_path):
-        if tf.train.checkpoint_exists(model_folder_or_path):
-            model_checkpoint = tf.train.latest_checkpoint(model_folder_or_path)
-            return model_folder_or_path if not model_checkpoint else model_checkpoint
+    def get_model_checkpoint(model_path):
+        if tf.train.checkpoint_exists(model_path):
+            model_checkpoint = tf.train.latest_checkpoint(model_path)
+            return model_path if not model_checkpoint else model_checkpoint
         return None
 
     @staticmethod
