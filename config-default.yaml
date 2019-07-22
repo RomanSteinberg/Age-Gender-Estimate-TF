@@ -67,7 +67,8 @@ train:
   #  варианты: 1) inception_resnet_v1     2) resnet_v2_50
   model: inception_resnet_v1
   # файл модели или папка с файлами для загрузки с диска
-  model_path: models/pretrained_models
+  # model_path models/pretrained_models
+  model_path: null
   # частота сохранения моделей
   val_frequency: 5
   num_prefetch: 2

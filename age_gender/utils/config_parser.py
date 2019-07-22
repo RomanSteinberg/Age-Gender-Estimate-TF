@@ -8,8 +8,7 @@ def set_absolute_paths(d, working_dir):
         if isinstance(d[key], dict):
             set_absolute_paths(d[key], working_dir)
         else:
-            # todo: remove model_path spike-nail
-            if 'path' in key and os.path.abspath(d[key]) != d[key] and key != 'model_path':
+            if d[key] is not None and 'path' in key and os.path.abspath(d[key]) != d[key]:
                 d[key] = os.path.join(working_dir, d[key])
 
 
