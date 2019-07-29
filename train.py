@@ -299,10 +299,12 @@ def get_streaming_metrics(metrics_deque, metrics_and_errors, mode):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", type=str,
-                        default="config.yaml", help="config")
+    parser.add_argument("--config", type=str, default="config.yaml", help="config")
     args = parser.parse_args()
     config = get_config(args.config)
     if not config['train']['cuda']:
         os.environ['CUDA_VISIBLE_DEVICES'] = ''
+    if config['mode'] not in ['start', 'continue', 'test']:
+        raise ValueError('Invalid mode!')
+
     ModelManager(config).train()
