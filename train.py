@@ -304,7 +304,7 @@ if __name__ == '__main__':
     config = get_config(args.config)
     if not config['train']['cuda']:
         os.environ['CUDA_VISIBLE_DEVICES'] = ''
-    if config['mode'] not in ['start', 'continue', 'test']:
+    if config['train']['mode'] not in ['start', 'continue', 'test']:
         raise ValueError('Invalid mode!')
 
     ModelManager(config).train()
