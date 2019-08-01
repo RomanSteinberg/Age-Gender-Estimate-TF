@@ -44,11 +44,17 @@ def cyclic_learning_rate(global_step,
 
 
 class LearningRateManager:
-    def __init__(self, method, config):
+    def __init__(self, method_name, config):
         self._config = config
-        self.method = method
-        self.methods = {'exponential': tf.train.exponential_decay, 'cyclic': cyclic_learning_rate}
-        self.method_function = self.methods[method]
+        self.method_name = method_name
+
+        self.method_options = {
+            'exponential': tf.train.exponential_decay,
+            'cyclic': cyclic_learning_rate,
+            'linear': tf.train.linear_cosine_decay,
+            'test_lr': tf.train.linear_cosine_decay,
+        }
+        self.method_function = self.method_options[self.method_name]
 
     def get_learning_rate(self, global_step):
         return self.method_function(global_step=global_step, **self._config)

@@ -1,5 +1,6 @@
 import os
 import yaml
+import json
 import argparse
 import numpy as np
 from pathlib import Path
@@ -30,12 +31,10 @@ class ModelManager:
             self._train_config['dataset']]
         if not self._train_config['balance_dataset']:
             self._dataset_config['balance'] = None
-        self._learning_rates_config = get_config(config, 'learning_rates')
-        learning_rate = self._train_config['learning_rate']
-        self.learning_rate_manager = LearningRateManager(
-            learning_rate,
-            self._learning_rates_config[learning_rate]
-        )
+        lr_method = self._train_config['learning_rate']
+        lr_config = get_config(config, 'learning_rates')
+        self._lr_config = lr_config['linear'] if lr_method == 'test_lr' else lr_config[lr_method]
+        self.learning_rate_manager = LearningRateManager(lr_method,self._lr_config)
         self.model = models[self._train_config['model']](
             **self._models_config[self._train_config['model']])
         self.num_epochs = self._train_config['epochs']
@@ -61,6 +60,7 @@ class ModelManager:
         self.images = tf.placeholder(tf.float32, shape=[None, 256, 256, 3])
         self.age_labels = tf.placeholder(tf.int32)
         self.gender_labels = tf.placeholder(tf.int32)
+        self.test_lr = list() if self.learning_rate_manager.method_name == 'test_lr' else None
         # todo: вынести константы
 
     def train(self):
@@ -79,6 +79,7 @@ class ModelManager:
             self.test_metrics_and_errors.keys(),
             self.val_frequency
         )
+        train_metrics_and_errors = dict()
         self.train_metrics_deque = self.train_json_metrics_writer.create_metric_deque()
         self.test_metrics_deque = self.test_json_metrics_writer.create_metric_deque()
         next_data_element, self.train_init_op, self.train_size = init_data_loader(
@@ -99,11 +100,9 @@ class ModelManager:
             num_prefetch=self._train_config['num_prefetch'],
             num_parallel_calls=self._train_config['num_parallel_calls']
         )
-        num_batches = self.train_size // self.batch_size + \
-            (self.train_size % self.batch_size != 0)
+        num_batches = self.train_size // self.batch_size + (self.train_size % self.batch_size != 0)
         print(f'Train size: {self.train_size}, test size: {self.test_size}')
-        print(
-            f'Epochs in train: {self.num_epochs}, batches in epoch: {num_batches}')
+        print(f'Epochs in train: {self.num_epochs}, batches in epoch: {num_batches}')
         print(f'Validation frequency {self.val_frequency}')
         # print('train_metrics_names:', self.train_metrics_names)
 
@@ -112,8 +111,7 @@ class ModelManager:
             sess.run(self.init_op)
             summary_writer = tf.summary.FileWriter(logs_folder, sess.graph)
             sess.run(tf.global_variables_initializer())
-            saver = ModelSaver(
-                var_list=self.variables_to_restore, max_to_keep=100)
+            saver = ModelSaver(var_list=self.variables_to_restore, max_to_keep=100)
             if self._train_config['model_path'] is not None:
                 self._train_config['model_path'] = saver.restore_model(sess, self.model_path)
             else:
@@ -133,6 +131,9 @@ class ModelManager:
             logger.info('Initialization complete. Train loop starts.')
             self.save_hyperparameters(start_time)
             for tr_batch_idx in range(1+trained_steps, 1+trained_steps+self.num_epochs*num_batches):
+                if train_metrics_and_errors.get('lr', 1.) <= 10 ** -10:
+                    print(f'Learning rate == 0 at {tr_batch_idx} step')
+                    break
                 # start_time.update({'train_epoch': datetime.now()})
                 logger.debug('load train batch')
                 train_images, train_age_labels, train_gender_labels, file_paths = sess.run(next_data_element)
@@ -178,12 +179,14 @@ class ModelManager:
                         # train_writer.add_summary(summary, step - num_batches + batch_idx)
                         test_metrics_and_errors = sess.run(self.test_metrics_and_errors, feed_dict=feed_dict)
                         logger.debug('calc test streaming metrics')
-                        summaries = get_streaming_metrics(self.test_metrics_deque, test_metrics_and_errors, 'test')
+                        summaries = get_streaming_metrics(self.test_metrics_deque, test_metrics_and_errors, 'test', self.test_lr)
                         logger.debug('save test summaries')
                         current_batch_num = int(step) - self.val_frequency + ts_batch_idx
                         summary_writer.add_summary(summaries, current_batch_num)
                         # self.test_json_metrics_writer.dump(current_batch_num, test_file_paths, self.test_metrics_deque)
                         logger.debug('test iteration complete')
+
+                    self.save_test_lr_data()
 
                     t = time_spent(start_time['test_epoch'])
                     print(f'Test takes {t}')
@@ -210,17 +213,24 @@ class ModelManager:
     def save_hyperparameters(self, start_time):
         self._train_config['duration'] = time_spent(start_time['train'])
         self._train_config['date'] = datetime.now().strftime("%Y_%m_%d_%H_%M")
-        num_hyperparams = len(glob(self.experiment_folder + '/*.yaml'))
-        hyperparams_name = "hyperparams.yaml" if num_hyperparams == 0 else f"hyperparams_{num_hyperparams}.yaml"
-        json_parameters_path = os.path.join(
-            self.experiment_folder, hyperparams_name)
         config = dict()
         config['model'] = self._models_config[self._train_config['model']]
-        config['learning_rate'] = self._learning_rates_config[self._train_config['learning_rate']]
+        config['learning_rate'] = self._lr_config
         config['dataset'] = self._dataset_config
         config['train'] = self._train_config
-        with open(json_parameters_path, 'w') as file:
+
+        num_hyperparams = len(glob(self.experiment_folder + '/*.yaml'))
+        hyperparams_name = "hyperparams.yaml" if num_hyperparams == 0 else f"hyperparams_{num_hyperparams}.yaml"
+        fn = os.path.join(self.experiment_folder, hyperparams_name)
+        with open(fn, 'w') as file:
             yaml.dump(config, file, default_flow_style=False)
+
+    def save_test_lr_data(self):
+        if self.learning_rate_manager.method_name == 'test_lr':
+            print(self.test_lr)
+            fn = os.path.join(self.experiment_folder, 'test_lr.json')
+            with open(fn, 'w') as file:
+                json.dump(self.test_lr, file)
 
     def create_computational_graph(self):
         self.variables_to_restore, age_logits, gender_logits = self.model.inference(
@@ -283,16 +293,20 @@ def time_spent(start):
     return str(timedelta(seconds=sec))
 
 
-def get_streaming_metrics(metrics_deque, metrics_and_errors, mode):
+def get_streaming_metrics(metrics_deque, metrics_and_errors, mode, test_lr=None):
     summaries_list = list()
+    test_lr_chunk = dict()
     for name in metrics_deque.keys():
         metric = metrics_and_errors[name]
         if name != 'lr':
             metrics_deque[name].append(metric)
             metric = np.mean(metrics_deque[name])
+        test_lr_chunk[name] = float(metric)
         summary = summary_pb2.Summary.Value(
             tag=f'{mode}/{name}', simple_value=metric)
         summaries_list.append(summary)
+    if test_lr is not None:
+        test_lr.append(test_lr_chunk)
     summaries = summary_pb2.Summary(value=summaries_list)
     return summaries
 
