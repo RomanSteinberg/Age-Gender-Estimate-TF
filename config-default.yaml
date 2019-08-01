@@ -27,7 +27,14 @@ learning_rates:
     step_size: 20
     gamma: 0.99994
     mode: exp_range
-    
+
+  linear:
+    learning_rate: 0.001
+    decay_steps:  1000
+    num_periods: 1000  # при совпадении с decay_steps, lr будет меняться от learning_rate до 0
+    alpha: 0
+    beta: 0
+
 prepare:
   general:
     dataset_path: data/dataset.json
@@ -79,6 +86,7 @@ train:
   #  2) continue - в папку с предобученной моделью
   #  3) test - запустить анализ результатов для обученной модели model_path
   mode: start
+  # значения могут быть: linear, exponential, cyclic, test_lr
   learning_rate: exponential
   epochs: 50
   batch_size: 16  # 30 максимум для GeForce 1060

@@ -144,7 +144,6 @@ class ModelManager:
                               self.bottleneck, self.regularized_vars]
                 feed_dict = {
                     self.train_mode: True,
-                    # np.zeros([16, 256, 256, 3])
                     self.images: train_images,
                     self.age_labels: train_age_labels,
                     self.gender_labels: train_gender_labels,
@@ -164,6 +163,7 @@ class ModelManager:
                     print(f'Model saved in file: {save_path}')
                 
                 if (step - trained_steps) % self.val_frequency == 0:
+                    last_lr = train_metrics_and_errors['lr']
                     start_time.update({'test_epoch': datetime.now()})
                     for ts_batch_idx in range(1, self.val_frequency+1):
                         logger.debug('load test batch')
@@ -175,9 +175,9 @@ class ModelManager:
                             self.age_labels: test_age_labels,
                             self.gender_labels: test_gender_labels
                         }
-                        # summary = sess.run(self.test_summary, feed_dict=feed_dict)
-                        # train_writer.add_summary(summary, step - num_batches + batch_idx)
+
                         test_metrics_and_errors = sess.run(self.test_metrics_and_errors, feed_dict=feed_dict)
+                        test_metrics_and_errors['lr'] = last_lr
                         logger.debug('calc test streaming metrics')
                         summaries = get_streaming_metrics(self.test_metrics_deque, test_metrics_and_errors, 'test', self.test_lr)
                         logger.debug('save test summaries')
@@ -227,7 +227,6 @@ class ModelManager:
 
     def save_test_lr_data(self):
         if self.learning_rate_manager.method_name == 'test_lr':
-            print(self.test_lr)
             fn = os.path.join(self.experiment_folder, 'test_lr.json')
             with open(fn, 'w') as file:
                 json.dump(self.test_lr, file)
@@ -302,10 +301,10 @@ def get_streaming_metrics(metrics_deque, metrics_and_errors, mode, test_lr=None)
             metrics_deque[name].append(metric)
             metric = np.mean(metrics_deque[name])
         test_lr_chunk[name] = float(metric)
-        summary = summary_pb2.Summary.Value(
-            tag=f'{mode}/{name}', simple_value=metric)
+        summary = summary_pb2.Summary.Value(tag=f'{mode}/{name}', simple_value=metric)
         summaries_list.append(summary)
     if test_lr is not None:
+        test_lr_chunk['lr'] = float(metrics_and_errors['lr'])  # необходимо значение lr взятое из train стадии
         test_lr.append(test_lr_chunk)
     summaries = summary_pb2.Summary(value=summaries_list)
     return summaries
